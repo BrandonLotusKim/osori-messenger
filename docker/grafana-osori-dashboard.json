@@ -1,0 +1,88 @@
+{
+  "annotations": { "list": [] },
+  "description": "오소리 메신저 v0.1 운영 대시보드 —. /metrics scrape 필요 (Prometheus job=osori).",
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "title": "활성 세션",
+      "type": "stat",
+      "targets": [{ "expr": "osori_session_count", "refId": "A" }],
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 }
+    },
+    {
+      "title": "메시지 처리량 (req/s)",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "rate(osori_messages_sent_total[1m])",      "refId": "A", "legendFormat": "sent" },
+        { "expr": "rate(osori_messages_delivered_total[1m])", "refId": "B", "legendFormat": "delivered" },
+        { "expr": "rate(osori_messages_queued_total[1m])",    "refId": "C", "legendFormat": "queued" },
+        { "expr": "rate(osori_messages_rate_limited_total[1m])", "refId": "D", "legendFormat": "rate_limited" }
+      ],
+      "gridPos": { "x": 6, "y": 0, "w": 18, "h": 8 }
+    },
+    {
+      "title": "쪽지 처리량 (req/s)",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "rate(osori_memo_sent_total[1m])",   "refId": "A", "legendFormat": "sent" },
+        { "expr": "rate(osori_memo_pushed_total[1m])", "refId": "B", "legendFormat": "pushed" },
+        { "expr": "rate(osori_memo_read_total[1m])",   "refId": "C", "legendFormat": "read" },
+        { "expr": "rate(osori_memo_deleted_total[1m])","refId": "D", "legendFormat": "deleted" }
+      ],
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 }
+    },
+    {
+      "title": "로그인 성공/실패 (req/s)",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "rate(osori_login_success_total[5m])", "refId": "A", "legendFormat": "success" },
+        { "expr": "rate(osori_login_failure_total[5m])", "refId": "B", "legendFormat": "failure" }
+      ],
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 }
+    },
+    {
+      "title": "디스크 잔여 비율 (%)",
+      "type": "gauge",
+      "targets": [{ "expr": "osori_disk_usable_ratio_per_mille / 10", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0, "max": 100, "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "orange", "value": 5 },
+              { "color": "green", "value": 20 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "x": 0, "y": 16, "w": 6, "h": 6 }
+    },
+    {
+      "title": "서버 업타임",
+      "type": "stat",
+      "targets": [{ "expr": "osori_uptime_seconds", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "gridPos": { "x": 6, "y": 16, "w": 6, "h": 6 }
+    },
+    {
+      "title": "파일 송수신 누적",
+      "type": "stat",
+      "targets": [
+        { "expr": "osori_files_uploaded_total",   "refId": "A", "legendFormat": "uploaded" },
+        { "expr": "osori_files_downloaded_total", "refId": "B", "legendFormat": "downloaded" }
+      ],
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 6 }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": ["osori", "messenger"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "Osori Messenger v0.1",
+  "uid": "osori-v01",
+  "version": 1
+}

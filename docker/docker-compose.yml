@@ -1,0 +1,39 @@
+# 오소리 메신저 — 로컬 개발용 PostgreSQL
+#
+# 기동:     docker compose -f docker/docker-compose.yml up -d
+# 중단:     docker compose -f docker/docker-compose.yml down
+# 초기화:   docker compose -f docker/docker-compose.yml down -v    (볼륨까지 삭제)
+#
+# 접속 정보 (로컬 기본값):
+#   URL:  jdbc:postgresql://localhost:5432/osori
+#   USER: osori
+#   PASS: osori_dev_pw
+#
+# 스키마는 schema.sql 이 컨테이너 초기 실행 시 자동 적용된다.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: osori-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: osori
+      POSTGRES_USER: osori
+      POSTGRES_PASSWORD: osori_dev_pw
+      TZ: Asia/Seoul
+      PGTZ: Asia/Seoul
+    ports:
+      - "5432:5432"
+    volumes:
+      - osori-pgdata:/var/lib/postgresql/data
+      # 컨테이너 최초 기동 시 schema.sql 자동 실행
+      - ../server/src/main/resources/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U osori -d osori"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  osori-pgdata:
+    name: osori-pgdata

@@ -1,0 +1,261 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================================
+  # Kotlin 서버 빌드 + 단위/통합 테스트 (Postgres 컨테이너 사이드카)
+  # ============================================================
+  server:
+    name: Server (Kotlin + Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: osori_test
+          POSTGRES_USER: osori
+          POSTGRES_PASSWORD: osori_dev_pw
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U osori -d osori_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      OSORI_TEST_DB_URL: jdbc:postgresql://localhost:5432/osori_test
+      OSORI_TEST_DB_USER: osori
+      OSORI_TEST_DB_PASS: osori_dev_pw
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Apply schema to test DB
+        run: |
+          sudo apt-get install -y postgresql-client
+          PGPASSWORD=osori_dev_pw psql -h localhost -U osori -d osori_test \
+            -f server/src/main/resources/db/schema.sql
+
+      - name: Server compile
+        working-directory: server
+        run: ./gradlew --no-daemon compileKotlin compileTestKotlin
+
+      - name: Server test
+        working-directory: server
+        run: ./gradlew --no-daemon test
+
+      - name: Upload server test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-test-report
+          path: server/build/reports/tests/test/
+
+      - name: Server installDist (배포 검증)
+        working-directory: server
+        run: ./gradlew --no-daemon installDist -x test
+
+      - name: Upload server installDist
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-installdist
+          path: server/build/install/osori-server/
+          retention-days: 7
+
+  # ============================================================
+  # C# Core 단위 테스트 (DB 불필요)
+  # ============================================================
+  client-core:
+    name: Client Core (.NET 8)
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore + build Core
+        working-directory: client-csharp
+        run: dotnet build src/OsoriClient.Core/OsoriClient.Core.csproj --nologo
+
+      - name: Run Core unit tests
+        working-directory: client-csharp
+        run: dotnet test src/OsoriClient.Core.Tests --nologo --logger "trx;LogFileName=core.trx"
+
+      - name: Upload Core test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-core-test-results
+          path: client-csharp/**/TestResults/
+
+  # ============================================================
+  # WPF 빌드 검증 (Windows only — System.Windows 의존)
+  # ============================================================
+  client-wpf:
+    name: Client WPF Build
+    runs-on: windows-latest
+    timeout-minutes: 15
+    needs: client-core
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: WPF Debug build
+        working-directory: client-csharp
+        run: dotnet build src/OsoriClient.Wpf --nologo
+
+      - name: WPF Release publish (배포 검증)
+        working-directory: client-csharp
+        run: dotnet publish src/OsoriClient.Wpf -c Release -r win-x64 --self-contained false --nologo
+
+      - name: Upload WPF publish output
+        uses: actions/upload-artifact@v4
+        with:
+          name: wpf-publish
+          path: client-csharp/src/OsoriClient.Wpf/bin/Release/net8.0-windows/win-x64/publish/
+          retention-days: 7
+
+  # ============================================================
+  # Smoke E2E — 서버 + Postgres + Kotlin/C# 클라 풀스택
+  # ============================================================
+  smoke:
+    name: Smoke E2E (서버 + DB + C# SmokeTest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [server, client-core]
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: osori
+          POSTGRES_USER: osori
+          POSTGRES_PASSWORD: osori_dev_pw
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U osori -d osori"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Apply schema + seed org sample
+        run: |
+          sudo apt-get install -y postgresql-client
+          PGPASSWORD=osori_dev_pw psql -h localhost -U osori -d osori \
+            -f server/src/main/resources/db/schema.sql
+          PGPASSWORD=osori_dev_pw psql -h localhost -U osori -d osori \
+            -f scripts/seed-org-sample.sql
+
+      - name: Server installDist
+        working-directory: server
+        run: ./gradlew --no-daemon installDist -x test
+
+      - name: Start server in background
+        working-directory: server
+        env:
+          OSORI_PORT: 7071
+          OSORI_DB_URL: jdbc:postgresql://localhost:5432/osori
+          OSORI_DB_USER: osori
+          OSORI_DB_PASS: osori_dev_pw
+          OSORI_AUTH_MODE: OPEN
+        run: |
+          ./build/install/osori-server/bin/osori-server > /tmp/server.log 2>&1 &
+          echo $! > /tmp/server.pid
+          # 서버가 listen 시작할 때까지 최대 30초 대기
+          for i in $(seq 1 30); do
+            if ss -tln | grep -q ':7071'; then
+              echo "server up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "server did not start" >&2
+          cat /tmp/server.log
+          exit 1
+
+      - name: Run C# smoke
+        working-directory: client-csharp
+        env:
+          OSORI_SMOKE_URL: ws://localhost:7071/ws
+        run: dotnet run --project src/OsoriClient.SmokeTest -c Release
+
+      - name: Stop server
+        if: always()
+        run: kill $(cat /tmp/server.pid) 2>/dev/null || true
+
+      - name: Upload server log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-server-log
+          path: /tmp/server.log
+
+  # ============================================================
+  # Docker 이미지 빌드 검증 (push 안 함, 빌드만)
+  # ============================================================
+  docker-build:
+    name: Docker server image (build verify)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: server
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build server image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.server
+          push: false
+          tags: osori-messenger-server:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

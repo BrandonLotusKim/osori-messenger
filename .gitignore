@@ -1,0 +1,57 @@
+# ---- Kotlin / Gradle ----
+.gradle/
+build/
+out/
+*.class
+*.jar
+bin/
+
+# ---- .NET / C# ----
+bin/
+obj/
+*.suo
+*.user
+*.dll
+*.exe
+*.pdb
+
+# ---- IDE ----
+.idea/
+*.iml
+.vscode/
+.fleet/
+.vs/
+
+# ---- Logs ----
+logs/
+*.log
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Protobuf generated ----
+**/generated/
+**/build/generated-src/
+
+# ---- Secrets / local config ----
+*.local.properties
+.env
+.env.local
+
+# ---- Sample DB dumps (실 운영 데이터 포함 — 절대 커밋 금지) ----
+Sample/*.sql
+Sample/*.SQL
+Sample/_Analysis/
+# 분석 산출물도 한글 COMMENT 에 업무 정보 포함 가능성 있어 함께 제외
+
+# ---- Codex 협업용 로컬 프롬프트 ----
+.codex_prompts/
+.codex_logs/
+
+# ---- 서버 런타임 데이터 (업로드 파일/로컬 스토리지) ----
+server/storage/
+
+# ---- DB 백업 (실 데이터 포함 — 절대 커밋 금지, D4) ----
+backups/

@@ -1,0 +1,112 @@
+# 오소리 메신저 운영 프로필 —
+#
+# 기동:
+#   cd <repo-root>
+#   cp docker/.env.example docker/.env       # 한 번만, 실제 값 채울 것
+#   docker compose -f docker/docker-compose.prod.yml --env-file docker/.env up -d
+#
+# 구성:
+#   - postgres : DB 본체 (volume 영속)
+#   - server   : Kotlin/Ktor 서버 (build from source)
+#   - pgbackup : pg_dump 일일 백업 sidecar
+#
+# TLS: 호스트의 keystore.jks 를 ./certs/ 로 마운트 + 환경변수 3종 설정.
+# 정식 인증서 발급은 docker/TLS.md 참고.
+#
+# 로그: server 컨테이너의 /app/logs → 호스트 ./logs 영속.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: osori-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${OSORI_DB_NAME:-osori}
+      POSTGRES_USER: ${OSORI_DB_USER:-osori}
+      POSTGRES_PASSWORD: ${OSORI_DB_PASS}
+      TZ: Asia/Seoul
+      PGTZ: Asia/Seoul
+    volumes:
+      - osori-pgdata:/var/lib/postgresql/data
+      - ../server/src/main/resources/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${OSORI_DB_USER:-osori} -d ${OSORI_DB_NAME:-osori}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # 포트는 외부 노출 X — server 컨테이너 내부망에서만 접근
+    networks:
+      - osori-net
+
+  server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+    image: osori-messenger-server:0.1.0
+    container_name: osori-server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      OSORI_PORT: 7070
+      OSORI_HOST: 0.0.0.0
+      OSORI_DB_URL: jdbc:postgresql://postgres:5432/${OSORI_DB_NAME:-osori}
+      OSORI_DB_USER: ${OSORI_DB_USER:-osori}
+      OSORI_DB_PASS: ${OSORI_DB_PASS}
+      OSORI_AUTH_MODE: ${OSORI_AUTH_MODE:-STRICT}
+      OSORI_RATE_LIMIT_ENABLED: "true"
+      OSORI_RATE_LIMIT_PER_USER_PER_SEC: ${OSORI_RATE_LIMIT_PER_USER_PER_SEC:-5}
+      OSORI_LOG_FILE_ENABLED: "true"
+      OSORI_LOG_DIR: /app/logs
+      OSORI_LOG_FORMAT: json
+      OSORI_FILE_STORAGE: /app/storage
+      # TLS — keystore.jks 를 ./certs 에 두면 자동 활성
+      OSORI_TLS_ENABLED: ${OSORI_TLS_ENABLED:-false}
+      OSORI_TLS_PORT: 7443
+      OSORI_KEYSTORE_PATH: /app/certs/keystore.jks
+      OSORI_KEYSTORE_PASSWORD: ${OSORI_KEYSTORE_PASSWORD:-}
+      OSORI_KEY_ALIAS: ${OSORI_KEY_ALIAS:-osori}
+      OSORI_KEY_PASSWORD: ${OSORI_KEY_PASSWORD:-}
+      JAVA_OPTS: ${JAVA_OPTS:--Xms256m -Xmx1g}
+    ports:
+      - "${OSORI_BIND_HOST:-0.0.0.0}:7070:7070"
+      - "${OSORI_BIND_HOST:-0.0.0.0}:7443:7443"
+    volumes:
+      - ./logs:/app/logs
+      - ./storage:/app/storage
+      - ./certs:/app/certs:ro
+    networks:
+      - osori-net
+
+  # 일일 pg_dump 백업 sidecar.
+  # entrypoint 가 cron 대신 sleep loop 로 매일 03:15 KST 실행.
+  pgbackup:
+    image: postgres:16
+    container_name: osori-pgbackup
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGUSER: ${OSORI_DB_USER:-osori}
+      PGPASSWORD: ${OSORI_DB_PASS}
+      PGHOST: postgres
+      PGDATABASE: ${OSORI_DB_NAME:-osori}
+      BACKUP_RETAIN_DAYS: ${BACKUP_RETAIN_DAYS:-14}
+      TZ: Asia/Seoul
+    volumes:
+      - ./backups:/backups
+      - ./pgbackup-entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    networks:
+      - osori-net
+
+volumes:
+  osori-pgdata:
+    name: osori-pgdata
+
+networks:
+  osori-net:
+    name: osori-net
+    driver: bridge

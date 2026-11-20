@@ -1,0 +1,1142 @@
+﻿<Window x:Class="OsoriClient.Wpf.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:OsoriClient.Wpf"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:core="clr-namespace:OsoriClient.Core;assembly=OsoriClient.Core"
+        Title="오소리 메신저"
+        Height="680" Width="380"
+        MinHeight="480" MinWidth="360"
+        ResizeMode="CanResize"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource SurfaceBrush}"
+        TextElement.Foreground="{StaticResource TextPrimaryBrush}"
+        FontFamily="{StaticResource AppFontFamily}"
+        FontSize="{StaticResource FontBody}"
+        Foreground="{StaticResource TextPrimaryBrush}">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="{StaticResource TitleBarHeight}"
+                            GlassFrameThickness="0"
+                            ResizeBorderThickness="4"
+                            NonClientFrameEdges="None"
+                            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+    <Window.Resources>
+
+        <!-- ════════ 조직도 TreeView 템플릿 ════════ -->
+        <HierarchicalDataTemplate x:Key="OrgUnitTemplate"
+                                  DataType="{x:Type core:OrgTreeNode}"
+                                  ItemsSource="{Binding Children}">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="📁" Margin="0,0,6,0" />
+                <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+            </StackPanel>
+        </HierarchicalDataTemplate>
+        <DataTemplate x:Key="OrgMemberTemplate" DataType="{x:Type core:OrgTreeNode}">
+            <!-- 2026-09-17 변경 — 메인 조직도 탭에서는 체크박스 대신 클릭=단일 선택,
+                 Ctrl+클릭=다중 선택(토글)으로 IsSelectedForRoom 을 조작한다. 수신자 선택용
+                 픽커(MessageRecipientPicker, 별도 창)는 이 템플릿과 무관하므로 체크박스 유지. -->
+            <Border Padding="4,2"
+                    Background="Transparent"
+                    MouseLeftButtonDown="OrgMemberRow_OnMouseLeftButtonDown"
+                    AutomationProperties.AutomationId="OrgMemberRow">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="Transparent" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsSelectedForRoom}" Value="True">
+                                <Setter Property="Background" Value="{StaticResource OrgMemberSelectedBrush}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <Border.ContextMenu>
+                    <!-- ContextMenu(Popup) 는 Window 의 TextElement.Foreground(흰색) 상속을 안 받고
+                         WPF 기본 Aero2 팝업 배경(밝은색)을 그대로 쓰기 때문에, 명시적으로 검은 글자로
+                         고정해야 한다 — 안 그러면 밝은 배경 위에 흰 글자로 안 보이는 버그가 됨. -->
+                    <ContextMenu Foreground="Black">
+                        <!-- 선택된 사람이 있으면(다중 선택) 그 사람들 전부로, 없으면 우클릭한 이 사람 한 명으로 방을 만들거나 연다. -->
+                        <MenuItem Header="대화하기" Click="OrgMember_StartTalk_OnClick" />
+                        <MenuItem Header="쪽지 보내기" Click="OrgMember_SendMessage_OnClick" />
+                    </ContextMenu>
+                </Border.ContextMenu>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="👤" Margin="0,0,6,0" />
+                    <TextBlock Text="{Binding DisplayName}" />
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+        <local:OrgTreeNodeTemplateSelector x:Key="OrgNodeSelector"
+                                           UnitTemplate="{StaticResource OrgUnitTemplate}"
+                                           MemberTemplate="{StaticResource OrgMemberTemplate}" />
+
+        <!-- ════════ 대화 리스트 아이템 템플릿 (OC-D02 §3.4) ════════ -->
+        <DataTemplate x:Key="TalkRowTemplate">
+            <Border Padding="10,10" BorderThickness="0,0,0,1" BorderBrush="{StaticResource BorderBrush}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />  <!-- Avatar -->
+                        <ColumnDefinition Width="*" />     <!-- Title/Preview -->
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 아바타 + presence dot -->
+                    <Grid Grid.Column="0" Margin="0,0,10,0" Width="40" Height="40">
+                        <Border CornerRadius="20">
+                            <Border.Background>
+                                <SolidColorBrush Color="{Binding AvatarColorHex, FallbackValue=#BDBDBD}" />
+                            </Border.Background>
+                            <TextBlock Text="{Binding AvatarInitial}"
+                                       Foreground="White"
+                                       FontWeight="SemiBold"
+                                       FontSize="13"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" />
+                        </Border>
+                        <!-- presence dot (방이 아닐 때만) -->
+                        <Ellipse Width="10" Height="10"
+                                 HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                 Stroke="{StaticResource SurfaceBrush}" StrokeThickness="2">
+                            <Ellipse.Fill>
+                                <SolidColorBrush Color="{Binding PresenceColorHex, FallbackValue=#9E9E9E}" />
+                            </Ellipse.Fill>
+                            <Ellipse.Style>
+                                <Style TargetType="Ellipse">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsRoom}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Ellipse.Style>
+                        </Ellipse>
+                    </Grid>
+
+                    <!-- 오른쪽 영역: 상단 이름+시각, 하단 미리보기+배지 -->
+                    <Grid Grid.Column="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0"
+                                   Text="{Binding DisplayName}"
+                                   FontWeight="SemiBold"
+                                   FontSize="{StaticResource FontListTitle}"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock Grid.Row="0" Grid.Column="1"
+                                   Text="{Binding LastMessageTsText}"
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   FontSize="{StaticResource FontTimestamp}"
+                                   VerticalAlignment="Top"
+                                   Margin="8,2,0,0" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0"
+                                   Text="{Binding LastMessagePreview}"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   FontSize="{StaticResource FontListPreview}"
+                                   TextTrimming="CharacterEllipsis"
+                                   Margin="0,2,0,0" />
+
+                        <!-- Unread badge — 처음 표시될 때 pop 애니메이션 -->
+                        <Border Grid.Row="1" Grid.Column="1"
+                                Background="{StaticResource UnreadBgBrush}"
+                                CornerRadius="9"
+                                MinWidth="18" Height="18"
+                                Padding="5,0"
+                                Margin="8,2,0,0"
+                                RenderTransformOrigin="0.5,0.5">
+                            <Border.RenderTransform>
+                                <!-- x:Name 필수 — 이름 없는 리터럴 ScaleTransform 은 DataTemplate 인스턴스마다
+                                     공유되는 frozen 객체로 최적화되어, 대화 항목이 2개 이상 동시에
+                                     HasUnread=True 로 애니메이션되면 "변경할 수 없는 개체 인스턴스" 예외 발생 -->
+                                <ScaleTransform x:Name="UnreadBadgeScale" ScaleX="1" ScaleY="1" />
+                            </Border.RenderTransform>
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasUnread}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                            <DataTrigger.EnterActions>
+                                                <BeginStoryboard>
+                                                    <Storyboard>
+                                                        <DoubleAnimation Storyboard.TargetProperty="(Border.RenderTransform).(ScaleTransform.ScaleX)"
+                                                                         From="0.4" To="1.0" Duration="0:0:0.18">
+                                                            <DoubleAnimation.EasingFunction>
+                                                                <BackEase EasingMode="EaseOut" Amplitude="0.4" />
+                                                            </DoubleAnimation.EasingFunction>
+                                                        </DoubleAnimation>
+                                                        <DoubleAnimation Storyboard.TargetProperty="(Border.RenderTransform).(ScaleTransform.ScaleY)"
+                                                                         From="0.4" To="1.0" Duration="0:0:0.18">
+                                                            <DoubleAnimation.EasingFunction>
+                                                                <BackEase EasingMode="EaseOut" Amplitude="0.4" />
+                                                            </DoubleAnimation.EasingFunction>
+                                                        </DoubleAnimation>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </DataTrigger.EnterActions>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <TextBlock Text="{Binding UnreadCount}"
+                                       Foreground="White"
+                                       FontSize="10"
+                                       FontWeight="SemiBold"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" />
+                        </Border>
+                    </Grid>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <!-- 탭 레일 RadioButton 스타일 — 48x48 아이콘 버튼 -->
+        <Style x:Key="TabRailButton" TargetType="RadioButton">
+            <Setter Property="Width" Value="48" />
+            <Setter Property="Height" Value="48" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontSize" Value="20" />
+            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,2" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Grid>
+                            <!--: 액센트 바는 항상 BrandBrush 로 그려두고 ScaleY 0/1 로 슬라이드인 -->
+                            <Border x:Name="Accent" Width="3" HorizontalAlignment="Left"
+                                    Margin="-4,10,0,10"
+                                    Background="{StaticResource BrandBrush}"
+                                    CornerRadius="0,2,2,0"
+                                    RenderTransformOrigin="0.5,0.5">
+                                <Border.RenderTransform>
+                                    <!-- x:Name 필수 — 없으면 XAML 컴파일러가 이 ScaleTransform 을
+                                         템플릿 인스턴스 전체가 공유하는 frozen 객체로 최적화해버려서
+                                         Storyboard 애니메이션 시 "변경할 수 없는 개체 인스턴스" 예외 발생 -->
+                                    <ScaleTransform x:Name="AccentScale" ScaleY="0" />
+                                </Border.RenderTransform>
+                            </Border>
+                            <Border x:Name="Bd"
+                                    CornerRadius="{StaticResource CornerMedium}"
+                                    Background="Transparent"
+                                    Margin="4,0">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource SurfaceMutedBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <!-- 카톡 패턴: 액센트 바 슬라이드인 + 아이콘 색 노랑 -->
+                                <Setter Property="Foreground" Value="{StaticResource BrandBrush}" />
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="Accent"
+                                                             Storyboard.TargetProperty="(Border.RenderTransform).(ScaleTransform.ScaleY)"
+                                                             To="1" Duration="0:0:0.18">
+                                                <DoubleAnimation.EasingFunction>
+                                                    <CubicEase EasingMode="EaseOut" />
+                                                </DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="Accent"
+                                                             Storyboard.TargetProperty="(Border.RenderTransform).(ScaleTransform.ScaleY)"
+                                                             To="0" Duration="0:0:0.12" />
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- 좌측 레일 플러그인 버튼(쪽지/대화 바로 보내기) — RadioButton 인 TabRailButton 과 달리
+             체크 상태가 없는 순수 동작 버튼이라 호버 하이라이트만 있는 별도 스타일. -->
+        <Style x:Key="PluginRailButton" TargetType="Button">
+            <Setter Property="Width" Value="48" />
+            <Setter Property="Height" Value="48" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,2" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd"
+                                CornerRadius="{StaticResource CornerMedium}"
+                                Background="Transparent"
+                                Margin="4,0">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource SurfaceMutedBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- TitleBarButtonStyle 은 Themes/TitleBar.xaml (App.xaml 전역 병합)로 이동 -->
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="32" />                               <!-- Title bar (TitleBarHeight 토큰은 Double 이라 GridLength 직접 값 사용) -->
+            <RowDefinition Height="Auto" />                             <!-- Disconnected banner -->
+            <RowDefinition Height="Auto" />                             <!-- Profile header -->
+            <RowDefinition Height="*" />                                <!-- Body (rail + content) -->
+            <RowDefinition Height="Auto" />                             <!-- Status bar -->
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,0,0,1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Margin="12,0,0,0">
+                    <Viewbox Width="16" Height="16" Stretch="Uniform">
+                        <Path Data="{StaticResource IconLogo}"
+                              Fill="{StaticResource BrandBrush}" />
+                    </Viewbox>
+                    <TextBlock Text="오소리 메신저"
+                               Margin="8,0,0,0"
+                               VerticalAlignment="Center"
+                               FontFamily="{StaticResource AppFontFamily}"
+                               FontSize="{StaticResource FontBody}"
+                               FontWeight="SemiBold" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button x:Name="MinimizeButton"
+                            Style="{StaticResource TitleBarButtonStyle}"
+                            ToolTip="최소화"
+                            Click="MinimizeButton_Click">
+                        <Viewbox Width="12" Height="12" Stretch="Uniform">
+                            <Path Data="{StaticResource IconMinimize}"
+                                  Fill="{StaticResource TextSecondaryBrush}" />
+                        </Viewbox>
+                    </Button>
+                    <Button x:Name="MaximizeButton"
+                            Style="{StaticResource TitleBarButtonStyle}"
+                            ToolTip="최대화"
+                            Click="MaximizeButton_Click">
+                        <Viewbox Width="12" Height="12" Stretch="Uniform">
+                            <Path x:Name="MaximizeIconPath"
+                                  Data="{StaticResource IconMaximize}"
+                                  Fill="{StaticResource TextSecondaryBrush}" />
+                        </Viewbox>
+                    </Button>
+                    <Button x:Name="CloseButton"
+                            Tag="Close"
+                            Style="{StaticResource TitleBarButtonStyle}"
+                            ToolTip="닫기"
+                            Click="CloseButton_Click">
+                        <Viewbox Width="12" Height="12" Stretch="Uniform">
+                            <Path Data="{StaticResource IconClose}">
+                                <Path.Style>
+                                    <Style TargetType="Path">
+                                        <Setter Property="Fill" Value="{StaticResource TextSecondaryBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsMouseOver, ElementName=CloseButton}" Value="True">
+                                                <Setter Property="Fill" Value="White" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding IsPressed, ElementName=CloseButton}" Value="True">
+                                                <Setter Property="Fill" Value="White" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Path.Style>
+                            </Path>
+                        </Viewbox>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ═════════ Disconnected/Reconnect 배너 ═════════ -->
+        <Border Grid.Row="1"
+                x:Name="ConnectionBanner"
+                Visibility="Collapsed"
+                Background="{StaticResource BannerWarnBgBrush}"
+                BorderBrush="{StaticResource BannerWarnBorderBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="12,8"
+                AutomationProperties.AutomationId="DisconnectedBanner">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <Ellipse Width="8" Height="8" Fill="{StaticResource BannerWarnFgBrush}" Margin="0,0,6,0" />
+                <TextBlock x:Name="ConnectionBannerText"
+                           Text="연결이 끊어졌습니다. 재접속 중..."
+                           Foreground="{StaticResource BannerWarnFgBrush}"
+                           FontSize="{StaticResource FontMeta}" />
+            </StackPanel>
+        </Border>
+
+        <!-- ═════════ 프로필 헤더 ═════════ -->
+        <Border Grid.Row="2"
+                Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="14,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- 아바타 -->
+                <Border Grid.Column="0"
+                        Width="{StaticResource AvatarSizeLarge}"
+                        Height="{StaticResource AvatarSizeLarge}"
+                        CornerRadius="20"
+                        Background="#4DB6AC"
+                        Margin="0,0,10,0">
+                    <TextBlock x:Name="AvatarInitial"
+                               Text="?"
+                               Foreground="White"
+                               FontWeight="SemiBold"
+                               FontSize="14"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center" />
+                </Border>
+
+                <!-- 이름 / presence -->
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock x:Name="ProfileNameText"
+                                   Text="(사용자)"
+                                   FontWeight="SemiBold"
+                                   FontSize="{StaticResource FontListTitle}" />
+                        <TextBlock x:Name="ProfileTitleText"
+                                   Text=""
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   Margin="6,0,0,0"
+                                   FontSize="{StaticResource FontMeta}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                        <Ellipse x:Name="ProfilePresenceDot"
+                                 Width="8" Height="8"
+                                 Fill="{StaticResource PresenceOnlineBrush}"
+                                 VerticalAlignment="Center" />
+                        <TextBlock x:Name="ProfilePresenceText"
+                                   Text="온라인"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   FontSize="{StaticResource FontMeta}"
+                                   Margin="6,0,0,0"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ═════════ Body (rail + content) ═════════ -->
+        <Grid Grid.Row="3">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="56" />  <!-- TabRailWidth 토큰은 Double 이라 GridLength 직접 값 사용 -->
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- 탭 레일 (카톡식: 위/아래 그룹 분리, Path 아이콘) -->
+            <Border Grid.Column="0"
+                    Background="{StaticResource SurfaceMutedBrush}"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="0,0,1,0">
+                <DockPanel>
+                    <!-- 하단 그룹: 플러그인 버튼(쪽지/대화 바로 보내기) + 설정 (카톡 패턴) -->
+                    <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,12">
+                        <Button x:Name="PluginSendMessageButton"
+                                Style="{StaticResource PluginRailButton}"
+                                Click="PluginSendMessage_OnClick"
+                                ToolTip="쪽지 보내기"
+                                AutomationProperties.AutomationId="PluginSendMessageButton">
+                            <Path Data="{StaticResource IconMessage}"
+                                  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                  Stretch="Uniform" Width="20" Height="20" />
+                        </Button>
+                        <Button x:Name="PluginSendTalkButton"
+                                Style="{StaticResource PluginRailButton}"
+                                Click="PluginSendTalk_OnClick"
+                                ToolTip="대화 보내기"
+                                AutomationProperties.AutomationId="PluginSendTalkButton">
+                            <Path Data="{StaticResource IconChat}"
+                                  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                  Stretch="Uniform" Width="20" Height="20" />
+                        </Button>
+                        <Border Height="1" Background="{StaticResource BorderBrush}" Margin="10,6" />
+                        <RadioButton x:Name="TabSettings"
+                                     Style="{StaticResource TabRailButton}"
+                                     GroupName="MainTabs"
+                                     Checked="Tab_OnChecked"
+                                     Tag="settings"
+                                     ToolTip="설정 (Ctrl+,)"
+                                     AutomationProperties.AutomationId="TabRailSettings">
+                            <Path Data="{StaticResource IconSettings}"
+                                  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"
+                                  Stretch="Uniform" Width="22" Height="22" />
+                        </RadioButton>
+                    </StackPanel>
+                    <!-- 상단 그룹: 조직도 / 대화 / 쪽지 (조직도 디폴트) -->
+                    <StackPanel VerticalAlignment="Top" Margin="0,12,0,0">
+                        <RadioButton x:Name="TabOrg"
+                                     Style="{StaticResource TabRailButton}"
+                                     GroupName="MainTabs"
+                                     IsChecked="True"
+                                     Checked="Tab_OnChecked"
+                                     Tag="org"
+                                     ToolTip="조직도 (Ctrl+1)"
+                                     AutomationProperties.AutomationId="TabRailOrg">
+                            <Path Data="{StaticResource IconOrg}"
+                                  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"
+                                  Stretch="Uniform" Width="22" Height="22" />
+                        </RadioButton>
+                        <RadioButton x:Name="TabTalk"
+                                     Style="{StaticResource TabRailButton}"
+                                     GroupName="MainTabs"
+                                     Checked="Tab_OnChecked"
+                                     Tag="talk"
+                                     ToolTip="대화 (Ctrl+2)"
+                                     AutomationProperties.AutomationId="TabRailTalk">
+                            <Path Data="{StaticResource IconChat}"
+                                  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"
+                                  Stretch="Uniform" Width="22" Height="22" />
+                        </RadioButton>
+                        <RadioButton x:Name="TabMessage"
+                                     Style="{StaticResource TabRailButton}"
+                                     GroupName="MainTabs"
+                                     Checked="Tab_OnChecked"
+                                     Tag="message"
+                                     ToolTip="쪽지 (Ctrl+3)"
+                                     AutomationProperties.AutomationId="TabRailMessage">
+                            <Grid Width="22" Height="22">
+                                <Path Data="{StaticResource IconMessage}"
+                                      Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"
+                                      Stretch="Uniform" />
+                                <!-- 미열독 배지 -->
+                                <Border x:Name="MessageTabBadge"
+                                        Visibility="Collapsed"
+                                        Background="{StaticResource UnreadBgBrush}"
+                                        CornerRadius="7"
+                                        MinWidth="14" Height="14"
+                                        Padding="3,0"
+                                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                                        Margin="0,-2,-4,0">
+                                    <TextBlock x:Name="MessageTabBadgeText"
+                                               Text="0"
+                                               Foreground="White"
+                                               FontSize="9"
+                                               FontWeight="SemiBold"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Border>
+                            </Grid>
+                        </RadioButton>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <!-- 탭 컨텐츠 (Visibility 토글) -->
+            <Grid Grid.Column="1">
+                <!-- 💬 대화 탭 (OC-D02 §3.4) -->
+                <Grid x:Name="TalkTabContent" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!-- 섹션 헤더 -->
+                    <Border Grid.Row="0"
+                            Background="{StaticResource SurfaceBrush}"
+                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="20,16,16,12">
+                        <!-- 카톡식 헤더: 큰 타이틀 + 우측 Path 아이콘 -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0"
+                                       Text="대화"
+                                       FontFamily="{StaticResource AppFontFamily}"
+                                       FontSize="22"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimaryBrush}"
+                                       VerticalAlignment="Center" />
+                            <Button Grid.Column="1" x:Name="TalkSearchButton"
+                                    Style="{StaticResource FlatIconButton}"
+                                    Width="32" Height="32"
+                                    Margin="0,0,2,0"
+                                    ToolTip="대화 검색 (Ctrl+F)"
+                                    Click="TalkSearchButton_OnClick"
+                                    AutomationProperties.AutomationId="TalkSearchBox">
+                                <Path Data="{StaticResource IconSearch}"
+                                      Fill="{StaticResource TextPrimaryBrush}"
+                                      Stretch="Uniform" Width="20" Height="20" />
+                            </Button>
+                            <Button Grid.Column="2" x:Name="TalkNewButton"
+                                    Style="{StaticResource FlatIconButton}"
+                                    Width="32" Height="32"
+                                    ToolTip="새 대화 (Ctrl+N)"
+                                    Click="TalkNewButton_OnClick"
+                                    AutomationProperties.AutomationId="NewTalkButton">
+                                <Path Data="{StaticResource IconPlus}"
+                                      Fill="{StaticResource TextPrimaryBrush}"
+                                      Stretch="Uniform" Width="18" Height="18" />
+                            </Button>
+                        </Grid>
+                    </Border>
+
+                    <!-- 대화 리스트 + EmptyList 일러스트 -->
+                    <Grid Grid.Row="1">
+                        <ListBox x:Name="TalkListBox"
+                                 BorderThickness="0"
+                                 Background="{StaticResource SurfaceBrush}"
+                                 Foreground="{StaticResource TextPrimaryBrush}"
+                                 ItemTemplate="{StaticResource TalkRowTemplate}"
+                                 HorizontalContentAlignment="Stretch"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 MouseDoubleClick="TalkListBox_OnMouseDoubleClick"
+                                 KeyDown="TalkListBox_OnKeyDown"
+                                 AutomationProperties.AutomationId="TalkListBox" />
+                        <StackPanel x:Name="TalkEmptyState"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Margin="0,0,0,40"
+                                    IsHitTestVisible="False">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Items.Count, ElementName=TalkListBox}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            <TextBlock Text="🦡"
+                                       FontSize="48"
+                                       Opacity="0.45"
+                                       HorizontalAlignment="Center"
+                                       Margin="0,0,0,12" />
+                            <TextBlock Text="아직 대화가 없습니다"
+                                       Style="{StaticResource SectionText}"
+                                       HorizontalAlignment="Center"
+                                       Margin="0,0,0,4" />
+                            <TextBlock Text="🏢 조직도에서 대화 상대를 골라 시작하세요"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       FontSize="{StaticResource FontMeta}"
+                                       HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+
+                <!-- 🏢 조직도 탭 (OC-D02 §3.5) -->
+                <Grid x:Name="OrgTabContent" Visibility="Visible">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- 섹션 헤더 -->
+                    <Border Grid.Row="0"
+                            Background="{StaticResource SurfaceBrush}"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="0,0,0,1"
+                            Padding="20,16,16,12">
+                        <!-- 카톡식 헤더 -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="조직도"
+                                       FontFamily="{StaticResource AppFontFamily}"
+                                       FontSize="22"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimaryBrush}"
+                                       VerticalAlignment="Center" />
+                            <Button Grid.Column="1" x:Name="OrgReloadButton"
+                                    Style="{StaticResource FlatIconButton}"
+                                    Width="32" Height="32"
+                                    ToolTip="조직도 새로고침 (F5)"
+                                    Click="OrgReloadButton_OnClick">
+                                <Path Data="{StaticResource IconReload}"
+                                      Fill="{StaticResource TextPrimaryBrush}"
+                                      Stretch="Uniform" Width="18" Height="18" />
+                            </Button>
+                        </Grid>
+                    </Border>
+
+                    <!-- 트리 -->
+                    <TreeView Grid.Row="1"
+                              x:Name="OrgTreeView"
+                              BorderThickness="0"
+                              Background="{StaticResource SurfaceBrush}"
+                              Foreground="{StaticResource TextPrimaryBrush}"
+                              ItemContainerStyle="{StaticResource AppTreeViewItem}"
+                              ItemTemplateSelector="{StaticResource OrgNodeSelector}"
+                              MouseDoubleClick="OrgTreeView_OnMouseDoubleClick"
+                              KeyDown="OrgTreeView_OnKeyDown"
+                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                              AutomationProperties.AutomationId="OrgTreeView" />
+
+                    <!-- 필터 검색 -->
+                    <Border Grid.Row="2"
+                            Background="{StaticResource SurfaceBrush}"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="0,1,0,0"
+                            Padding="12">
+                        <TextBox x:Name="OrgFilterBox"
+                                 Style="{StaticResource AppTextBox}"
+                                 TextChanged="OrgFilterBox_OnTextChanged"
+                                 PreviewKeyDown="OrgFilterBox_OnPreviewKeyDown"
+                                 AutomationProperties.AutomationId="OrgFilterBox"
+                                 ToolTip="이름/부서 필터 — ↓ 화살표로 트리 이동, Enter 대화 시작" />
+                    </Border>
+                </Grid>
+
+                <!-- ✉ 쪽지 탭 -->
+                <Grid x:Name="MessageTabContent" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!-- 섹션 헤더 -->
+                    <Border Grid.Row="0"
+                            Background="{StaticResource SurfaceBrush}"
+                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="20,16,16,12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="쪽지"
+                                       FontFamily="{StaticResource AppFontFamily}"
+                                       FontSize="22"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimaryBrush}"
+                                       VerticalAlignment="Center" />
+                            <Button Grid.Column="1" x:Name="MessageReloadButton"
+                                    Style="{StaticResource FlatIconButton}"
+                                    Width="32" Height="32"
+                                    Margin="0,0,2,0"
+                                    ToolTip="새로고침 (F5)"
+                                    Click="MessageReloadButton_OnClick">
+                                <Path Data="{StaticResource IconReload}"
+                                      Fill="{StaticResource TextPrimaryBrush}"
+                                      Stretch="Uniform" Width="18" Height="18" />
+                            </Button>
+                            <Button Grid.Column="2" x:Name="MessageComposeButton"
+                                    Style="{StaticResource FlatIconButton}"
+                                    Width="32" Height="32"
+                                    ToolTip="쪽지 쓰기"
+                                    Click="MessageComposeButton_OnClick"
+                                    AutomationProperties.AutomationId="MessageComposeButton">
+                                <Path Data="{StaticResource IconPlus}"
+                                      Fill="{StaticResource TextPrimaryBrush}"
+                                      Stretch="Uniform" Width="18" Height="18" />
+                            </Button>
+                        </Grid>
+                    </Border>
+
+                    <!-- 받은쪽지함/보낸쪽지함 토글 -->
+                    <Border Grid.Row="1"
+                            Background="{StaticResource SurfaceBrush}"
+                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1"
+                            Padding="12,8">
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton x:Name="MessageBoxInbox"
+                                         Content="받은쪽지함"
+                                         IsChecked="True"
+                                         GroupName="MessageBox"
+                                         Margin="0,0,12,0"
+                                         Checked="MessageBox_OnChecked"
+                                         Tag="inbox"
+                                         AutomationProperties.AutomationId="MessageBoxInbox" />
+                            <RadioButton x:Name="MessageBoxSent"
+                                         Content="보낸쪽지함"
+                                         GroupName="MessageBox"
+                                         Checked="MessageBox_OnChecked"
+                                         Tag="sent"
+                                         AutomationProperties.AutomationId="MessageBoxSent" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 쪽지 리스트 -->
+                    <Grid Grid.Row="2">
+                        <ListBox x:Name="MessageListBox"
+                                 BorderThickness="0"
+                                 Background="{StaticResource SurfaceBrush}"
+                                 Foreground="{StaticResource TextPrimaryBrush}"
+                                 HorizontalContentAlignment="Stretch"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 MouseDoubleClick="MessageListBox_OnMouseDoubleClick"
+                                 AutomationProperties.AutomationId="MessageListBox">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Padding="14,10" BorderThickness="0,0,0,1" BorderBrush="{StaticResource BorderBrush}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+
+                                            <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal">
+                                                <Ellipse Width="8" Height="8" Margin="0,0,6,0"
+                                                         VerticalAlignment="Center"
+                                                         Fill="{StaticResource UnreadBgBrush}"
+                                                         Visibility="{Binding UnreadVisibility}" />
+                                                <TextBlock Text="{Binding CounterpartLabel}"
+                                                           FontWeight="SemiBold"
+                                                           FontSize="{StaticResource FontListTitle}"
+                                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                                           TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Row="0" Grid.Column="1"
+                                                       Text="{Binding SentAtText}"
+                                                       Foreground="{StaticResource TextMutedBrush}"
+                                                       FontSize="{StaticResource FontTimestamp}"
+                                                       Margin="8,2,0,0" />
+                                            <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                                                        Orientation="Horizontal" Margin="0,2,0,0">
+                                                <Viewbox Width="11" Height="11" Margin="0,0,4,0"
+                                                         Visibility="{Binding AttachmentVisibility}">
+                                                    <Path Data="{StaticResource IconAttach}"
+                                                          Fill="{StaticResource TextMutedBrush}" />
+                                                </Viewbox>
+                                                <TextBlock Text="{Binding Title}"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           FontSize="{StaticResource FontListPreview}"
+                                                           TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <StackPanel x:Name="MessageEmptyState"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Margin="0,0,0,40">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Items.Count, ElementName=MessageListBox}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            <Viewbox Width="48" Height="48" Margin="0,0,0,12">
+                                <Path Data="{StaticResource IconMessage}"
+                                      Fill="{StaticResource TextMutedBrush}"
+                                      Stretch="Uniform" Opacity="0.45" />
+                            </Viewbox>
+                            <TextBlock x:Name="MessageEmptyText"
+                                       Text="받은 쪽지가 없습니다"
+                                       Style="{StaticResource SectionText}"
+                                       HorizontalAlignment="Center" />
+                            <TextBlock Text="조직도에서 사용자를 우클릭하거나, 아래 버튼으로 새 쪽지를 보내보세요"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       FontSize="{StaticResource FontMeta}"
+                                       HorizontalAlignment="Center"
+                                       TextAlignment="Center"
+                                       TextWrapping="Wrap"
+                                       MaxWidth="260"
+                                       Margin="0,6,0,16" />
+                            <Button Content="✉  쪽지 쓰기"
+                                    Style="{StaticResource PrimaryButton}"
+                                    HorizontalAlignment="Center"
+                                    Padding="20,8"
+                                    Click="MessageComposeButton_OnClick"
+                                    AutomationProperties.AutomationId="MessageComposeEmptyCta" />
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+
+                <!-- ⚙ 설정 탭 (OC-D02 §3.6) -->
+                <Grid x:Name="SettingsTabContent" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <Border Grid.Row="0"
+                            Background="{StaticResource SurfaceBrush}"
+                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="20,16,16,12">
+                        <TextBlock Text="설정"
+                                   FontFamily="{StaticResource AppFontFamily}"
+                                   FontSize="22"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}" />
+                    </Border>
+
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="12">
+
+                            <!-- 서버 연결 -->
+                            <Expander IsExpanded="False" Margin="0,0,0,8"
+                                      BorderBrush="{StaticResource BorderBrush}"
+                                      BorderThickness="1"
+                                      Background="{StaticResource SurfaceBrush}"
+                                      Padding="12,8,12,12">
+                                <Expander.Header>
+                                    <StackPanel>
+                                        <TextBlock Text="서버 연결" FontWeight="SemiBold" FontSize="{StaticResource FontListTitle}" />
+                                        <TextBlock x:Name="SettingsServerSummary"
+                                                   Style="{StaticResource MetaText}"
+                                                   Text="localhost:7071" />
+                                    </StackPanel>
+                                </Expander.Header>
+                                <StackPanel Margin="0,8,0,0">
+                                    <TextBlock Text="서버 호스트" Style="{StaticResource LabelText}" Margin="0,0,0,4" />
+                                    <TextBox x:Name="SettingsHostBox" Style="{StaticResource AppTextBox}" Margin="0,0,0,8" />
+                                    <TextBlock Text="포트" Style="{StaticResource LabelText}" Margin="0,0,0,4" />
+                                    <TextBox x:Name="SettingsPortBox" Style="{StaticResource AppTextBox}" Margin="0,0,0,8" />
+                                    <CheckBox x:Name="SettingsUseTlsCheck" Content="wss 사용"
+                                              FontSize="{StaticResource FontMeta}"
+                                              Foreground="{StaticResource TextSecondaryBrush}" />
+                                </StackPanel>
+                            </Expander>
+
+                            <!-- 알림 -->
+                            <Expander IsExpanded="False" Margin="0,0,0,8"
+                                      BorderBrush="{StaticResource BorderBrush}"
+                                      BorderThickness="1"
+                                      Background="{StaticResource SurfaceBrush}"
+                                      Padding="12,8,12,12">
+                                <Expander.Header>
+                                    <StackPanel>
+                                        <TextBlock Text="알림" FontWeight="SemiBold" FontSize="{StaticResource FontListTitle}" />
+                                        <TextBlock x:Name="SettingsNotifySummary"
+                                                   Style="{StaticResource MetaText}"
+                                                   Text="메시지 소리 · 트레이 알림" />
+                                    </StackPanel>
+                                </Expander.Header>
+                                <StackPanel Margin="0,8,0,0">
+                                    <CheckBox x:Name="SettingsPlaySoundCheck" Content="메시지 수신 시 소리"
+                                              FontSize="{StaticResource FontMeta}" Margin="0,0,0,6" />
+                                    <CheckBox x:Name="SettingsTrayCheck" Content="트레이 알림"
+                                              FontSize="{StaticResource FontMeta}" Margin="0,0,0,6" />
+                                    <CheckBox x:Name="SettingsCloseToTrayCheck" Content="X 버튼을 누르면 트레이로 최소화"
+                                              FontSize="{StaticResource FontMeta}" Margin="0,0,0,10" />
+                                    <TextBlock Text="알림 채널별"
+                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                               FontSize="{StaticResource FontMeta}"
+                                               FontWeight="SemiBold"
+                                               Margin="0,4,0,4" />
+                                    <CheckBox x:Name="SettingsNotifyDmCheck"    Content="1:1 메시지"  FontSize="{StaticResource FontMeta}" Margin="0,0,0,4" />
+                                    <CheckBox x:Name="SettingsNotifyRoomCheck"  Content="그룹 채팅" FontSize="{StaticResource FontMeta}" Margin="0,0,0,4" />
+                                    <CheckBox x:Name="SettingsNotifyMessageCheck"  Content="쪽지"       FontSize="{StaticResource FontMeta}" Margin="0,0,0,4" />
+                                    <CheckBox x:Name="SettingsNotifyFileCheck"  Content="파일 도착"  FontSize="{StaticResource FontMeta}" />
+                                </StackPanel>
+                            </Expander>
+
+                            <!-- 표시 -->
+                            <Expander IsExpanded="False" Margin="0,0,0,8"
+                                      BorderBrush="{StaticResource BorderBrush}"
+                                      BorderThickness="1"
+                                      Background="{StaticResource SurfaceBrush}"
+                                      Padding="12,8,12,12">
+                                <Expander.Header>
+                                    <StackPanel>
+                                        <TextBlock Text="표시" FontWeight="SemiBold" FontSize="{StaticResource FontListTitle}" />
+                                        <TextBlock x:Name="SettingsDisplaySummary"
+                                                   Style="{StaticResource MetaText}"
+                                                   Text="글꼴 14pt · 라이트" />
+                                    </StackPanel>
+                                </Expander.Header>
+                                <StackPanel Margin="0,8,0,0">
+                                    <TextBlock Text="글꼴 크기 (pt)" Style="{StaticResource LabelText}" Margin="0,0,0,4" />
+                                    <TextBox x:Name="SettingsFontSizeBox" Style="{StaticResource AppTextBox}" Width="100" HorizontalAlignment="Left" Margin="0,0,0,8" />
+                                    <TextBlock Text="테마 (v0.2 예정)" Style="{StaticResource LabelText}" Margin="0,0,0,4" />
+                                    <ComboBox x:Name="SettingsThemeCombo" Width="160" HorizontalAlignment="Left" IsEnabled="False"
+                                              ToolTip="현재 v0.1 은 다크 테마 고정. v0.2 에서 라이트/시스템 토글 추가 예정.">
+                                        <ComboBoxItem Content="dark (현재)" />
+                                    </ComboBox>
+                                    <TextBlock Text="v0.2 에서 라이트 / 시스템 테마 동기화 지원 예정"
+                                               Foreground="{StaticResource TextMutedBrush}"
+                                               FontSize="{StaticResource FontMeta}"
+                                               Margin="0,4,0,0" />
+                                </StackPanel>
+                            </Expander>
+
+                            <!-- 신뢰성 -->
+                            <Expander IsExpanded="False" Margin="0,0,0,8"
+                                      BorderBrush="{StaticResource BorderBrush}"
+                                      BorderThickness="1"
+                                      Background="{StaticResource SurfaceBrush}"
+                                      Padding="12,8,12,12">
+                                <Expander.Header>
+                                    <StackPanel>
+                                        <TextBlock Text="신뢰성" FontWeight="SemiBold" FontSize="{StaticResource FontListTitle}" />
+                                        <TextBlock x:Name="SettingsReliabilitySummary"
+                                                   Style="{StaticResource MetaText}"
+                                                   Text="자동 재접속 · 히스토리 동기화" />
+                                    </StackPanel>
+                                </Expander.Header>
+                                <StackPanel Margin="0,8,0,0">
+                                    <CheckBox x:Name="SettingsAutoReconnectCheck" Content="연결 끊김 시 자동 재접속"
+                                              FontSize="{StaticResource FontMeta}" Margin="0,0,0,6" />
+                                    <CheckBox x:Name="SettingsAutoHistoryCheck" Content="로그인 후 자동 히스토리 동기화"
+                                              FontSize="{StaticResource FontMeta}" Margin="0,0,0,6" />
+                                    <CheckBox x:Name="SettingsAutoOrgCheck" Content="로그인 후 조직도 자동 로드"
+                                              FontSize="{StaticResource FontMeta}" Margin="0,0,0,6" />
+                                    <TextBlock Text="히스토리 페이지 크기" Style="{StaticResource LabelText}" Margin="0,8,0,4" />
+                                    <TextBox x:Name="SettingsHistorySizeBox" Style="{StaticResource AppTextBox}" Width="100" HorizontalAlignment="Left" />
+                                </StackPanel>
+                            </Expander>
+
+                            <!-- 하단: 저장 / 초기화 / 버전 -->
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+                                <Button x:Name="SettingsResetButton" Content="초기화"
+                                        Style="{StaticResource SecondaryButton}" Margin="0,0,8,0"
+                                        Click="SettingsResetButton_OnClick" />
+                                <Button x:Name="SettingsSaveButton" Content="저장"
+                                        Style="{StaticResource PrimaryButton}"
+                                        Click="SettingsSaveButton_OnClick" />
+                            </StackPanel>
+
+                            <!-- 단축키 안내 -->
+                            <Border Margin="0,16,0,8" Padding="12,8"
+                                    Background="{StaticResource SurfaceMutedBrush}"
+                                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                                    CornerRadius="{StaticResource CornerSmall}">
+                                <StackPanel>
+                                    <TextBlock Text="단축키"
+                                               FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextPrimaryBrush}"
+                                               Margin="0,0,0,6" />
+                                    <TextBlock Style="{StaticResource MetaText}" TextWrapping="Wrap">
+                                        <Run Text="Ctrl+1 조직도 / Ctrl+2 대화 / Ctrl+3 쪽지 / Ctrl+, 설정" />
+                                        <LineBreak />
+                                        <Run Text="Ctrl+N 새 쪽지 / Ctrl+F 대화 검색 / F5 새로고침" />
+                                        <LineBreak />
+                                        <Run Text="조직도: 필터에서 ↓ 트리 이동, Enter 첫 멤버와 대화" />
+                                        <LineBreak />
+                                        <Run Text="쪽지 쓰기: Ctrl+Enter 보내기, Esc 취소" />
+                                        <LineBreak />
+                                        <Run Text="대화창: Esc 닫기, Ctrl+M 멤버 드로어 (그룹 채팅)" />
+                                        <LineBreak />
+                                        <Run Text="메시지: Enter 보내기, Shift+Enter 줄바꿈" />
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- 버전 정보 블록 — 진단 시 사용자에게 한 번에 보여주는 메타 -->
+                            <Border Margin="0,0,0,0" Padding="12,8"
+                                    Background="{StaticResource SurfaceMutedBrush}"
+                                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                                    CornerRadius="{StaticResource CornerSmall}">
+                                <StackPanel>
+                                    <TextBlock Text="오소리 메신저 0.1.0 · 프로토콜 v1"
+                                               FontWeight="SemiBold"
+                                               HorizontalAlignment="Center"
+                                               Foreground="{StaticResource TextPrimaryBrush}" />
+                                    <TextBlock x:Name="VersionInfoText"
+                                               Style="{StaticResource MetaText}"
+                                               HorizontalAlignment="Center"
+                                               Margin="0,4,0,0"
+                                               TextAlignment="Center"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+                            <!-- 진단용 로그 보내기 — crash.log 등 압축해서 저장 -->
+                            <Button x:Name="SettingsExportLogsButton" Content="진단 로그 내보내기 (zip)"
+                                    Style="{StaticResource SecondaryButton}"
+                                    HorizontalAlignment="Center"
+                                    Margin="0,12,0,0"
+                                    Click="SettingsExportLogsButton_OnClick"
+                                    AutomationProperties.AutomationId="SettingsExportLogs" />
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,8,0,0">
+                                <Button x:Name="SettingsLogoutButton" Content="로그아웃"
+                                        Style="{StaticResource DangerButton}"
+                                        Click="SettingsLogoutButton_OnClick" />
+                                <Button x:Name="SettingsExitButton" Content="종료"
+                                        Style="{StaticResource DangerButton}"
+                                        Margin="8,0,0,0"
+                                        Click="SettingsExitButton_OnClick" />
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Grid>
+        </Grid>
+
+        <!-- ═════════ 상태 바 ═════════ -->
+        <Border Grid.Row="4"
+                Background="{StaticResource SurfaceMutedBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="12,6">
+            <StackPanel Orientation="Horizontal">
+                <Ellipse x:Name="StatusBarDot"
+                         Width="8" Height="8"
+                         Fill="{StaticResource PresenceOnlineBrush}"
+                         VerticalAlignment="Center" />
+                <TextBlock x:Name="StatusBarText"
+                           Text="연결됨"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           FontSize="{StaticResource FontMeta}"
+                           Margin="6,0,0,0"
+                           VerticalAlignment="Center"
+                           AutomationProperties.AutomationId="StatusBarConnection" />
+                <TextBlock x:Name="StatusBarSyncText"
+                           Text=""
+                           Foreground="{StaticResource TextMutedBrush}"
+                           FontSize="{StaticResource FontMeta}"
+                           Margin="10,0,0,0"
+                           VerticalAlignment="Center"
+                           AutomationProperties.AutomationId="StatusBarSync" />
+            </StackPanel>
+        </Border>
+
+        <!--: 인앱 토스트 오버레이 — 모든 row 위로 띄움 -->
+        <StackPanel x:Name="ToastContainer"
+                    Grid.Row="0" Grid.RowSpan="5"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Top"
+                    Margin="0,40,12,0"
+                    Panel.ZIndex="100"
+                    IsHitTestVisible="False" />
+    </Grid>
+</Window>

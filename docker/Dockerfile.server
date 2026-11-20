@@ -1,0 +1,64 @@
+# 오소리 메신저 서버 운영 이미지 — OC-280
+#
+# 멀티스테이지 빌드:
+#   1. eclipse-temurin:17-jdk 로 gradlew shadowJar 실행
+#   2. eclipse-temurin:17-jre 슬림 베이스에 jar 만 복사 (이미지 크기 절약)
+
+FROM eclipse-temurin:17-jdk AS builder
+WORKDIR /build
+
+# Gradle wrapper + 의존성 캐시를 위해 빌드 스크립트만 먼저 복사
+COPY server/gradlew server/gradlew.bat ./
+COPY server/gradle ./gradle
+COPY server/build.gradle.kts server/settings.gradle.kts ./
+# proto 도 빌드에 필요
+COPY proto ./proto
+
+RUN chmod +x ./gradlew \
+    && ./gradlew --no-daemon dependencies > /dev/null 2>&1 || true
+
+# 소스 복사 + 빌드
+COPY server/src ./src
+# application plugin 의 installDist 로 fat-jar 대신 lib/ + 실행 스크립트 묶음 생성
+RUN ./gradlew --no-daemon installDist -x test
+
+# ============= 실행 스테이지 =============
+FROM eclipse-temurin:17-jre AS runtime
+
+LABEL org.opencontainers.image.title="osori-messenger-server" \
+      org.opencontainers.image.description="오소리 메신저 Kotlin/Ktor 서버" \
+      org.opencontainers.image.source="https://github.com/BrandonLotusKim" \
+      org.opencontainers.image.licenses="MIT"
+
+# 비루트 사용자로 실행
+RUN groupadd --system osori && useradd --system --gid osori --create-home osori
+WORKDIR /app
+
+# installDist 산출물 일괄 복사 (bin/ + lib/)
+COPY --from=builder /build/build/install/osori-server /app
+
+# 로그/업로드/keystore 볼륨 마운트 포인트
+RUN mkdir -p /app/logs /app/storage /app/certs \
+    && chown -R osori:osori /app
+VOLUME ["/app/logs", "/app/storage", "/app/certs"]
+
+USER osori
+
+# 기본 환경 — docker-compose 에서 override
+ENV OSORI_PORT=7070 \
+    OSORI_HOST=0.0.0.0 \
+    OSORI_LOG_FILE_ENABLED=true \
+    OSORI_LOG_DIR=/app/logs \
+    OSORI_FILE_STORAGE=/app/storage \
+    OSORI_DB_ENABLED=true \
+    OSORI_RATE_LIMIT_ENABLED=true \
+    OSORI_RATE_LIMIT_PER_USER_PER_SEC=5 \
+    OSORI_AUTH_MODE=STRICT
+
+EXPOSE 7070 7443
+
+# TCP 포트 응답으로 살아있는지 검증
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD ["/bin/sh", "-c", "exec 3<>/dev/tcp/127.0.0.1/7070 || exit 1"]
+
+ENTRYPOINT ["/app/bin/osori-server"]

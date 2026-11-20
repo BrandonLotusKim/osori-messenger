@@ -1,0 +1,841 @@
+// 오소리 메신저 와이어 프로토콜 v1
+//
+// 이 파일이 서버(Kotlin)와 클라이언트(C#) 간 경계 계약이다.
+// 스키마 변경 시 버전 정책:
+//   - 필드 번호는 절대 재사용 금지 (reserved 로 봉인)
+//   - 새 필드는 뒤에 추가만, 기존 필드 삭제는 reserved 로 대체
+//   - 의미가 바뀌는 변경은 v2 로 패키지 분기
+//
+// 도메인 네이밍 규칙:
+//   - 대화(1:1 + 그룹) 관련 → 이름에 `talk` 가 들어간다 (TalkSend, TalkRoom*, TalkHistory* …)
+//   - 쪽지 관련 → 이름에 `message` 가 들어간다 (MessageSend, MessageReceived …). `talk` 는 절대 안 붙인다.
+
+syntax = "proto3";
+
+package osori.v1;
+
+option java_package = "com.osori.proto.v1";
+option java_multiple_files = true;
+option csharp_namespace = "Osori.Proto.V1";
+
+
+// ============================================================================
+// Envelope — 모든 프레임의 최외곽 봉투
+// ============================================================================
+// 하나의 WebSocket 바이너리 프레임 = 하나의 Envelope.
+// oneof 로 payload 타입을 구분하므로 스키마가 곧 프레임 디스패치 테이블.
+message Envelope {
+  // 클라→서버 요청의 논리 순서.
+  // 서버는 응답 시 동일 sequence 를 돌려주어 요청/응답 매칭.
+  // 서버가 능동적으로 보내는 프레임(TalkReceived 등)은 독립 sequence.
+  uint64 sequence = 1;
+
+  oneof payload {
+    // 인증 계열
+    LoginRequest     login_req      = 10;
+    LoginResponse    login_res      = 11;
+    Logout           logout         = 12;
+
+    // 대화(1:1) 계열
+    TalkSend         talk_send      = 20;
+    TalkSendAck      talk_send_ack  = 21;
+    TalkReceived     talk_received  = 22;
+
+    // 세션 유지
+    Heartbeat        heartbeat      = 99;
+    HeartbeatAck     heartbeat_ack  = 98;
+
+    // 프레즌스 이후)
+    PresenceEvent    presence_event = 30;
+
+    // 대화(1:1) 히스토리 동기화 이후)
+    TalkHistoryRequest   talk_history_req = 40;
+    TalkHistoryResponse  talk_history_res = 41;
+
+    // 대화(그룹), Phase 6)
+    TalkRoomCreate          talk_room_create     = 50;
+    TalkRoomCreateAck       talk_room_create_ack = 51;
+    TalkRoomJoin            talk_room_join       = 52;
+    TalkRoomJoinAck         talk_room_join_ack   = 53;
+    TalkRoomSend            talk_room_send       = 54;
+    TalkRoomSendAck         talk_room_send_ack   = 55;
+    TalkRoomReceived        talk_room_received   = 56;
+
+    // File transfer, Phase 6)
+    FileUploadStart          file_upload_start     = 60;
+    FileUploadStartAck       file_upload_start_ack = 61;
+    FileUploadChunk          file_upload_chunk     = 62;
+    FileUploadComplete       file_upload_complete  = 63;
+    FileUploadCompleteAck    file_upload_complete_ack = 64;
+    FileAvailableNotification file_available       = 65;
+
+    // File download
+    FileDownloadRequest file_download_req   = 66;
+    FileDownloadStart   file_download_start = 67;
+    FileDownloadChunk   file_download_chunk = 68;
+
+    // 대화(그룹) metadata
+    TalkRoomInfoRequest  talk_room_info_req = 70;
+    TalkRoomInfoResponse talk_room_info_res = 71;
+
+    // Org directory — full tree + members snapshot
+    OrgListRequest   org_list_req  = 80;
+    OrgListResponse  org_list_res  = 81;
+
+    // 대화(1:1) 검색
+    TalkSearchRequest  talk_search_req = 90;
+    TalkSearchResponse talk_search_res = 91;
+
+    // Push token registration — 클라이언트 → 서버
+    PushTokenRegisterRequest    push_token_register_req    = 100;
+    PushTokenRegisterResponse   push_token_register_res    = 101;
+    PushTokenUnregisterRequest  push_token_unregister_req  = 102;
+    PushTokenUnregisterResponse push_token_unregister_res  = 103;
+
+    // 쪽지, 비대화형 1:N 공지성, 오프라인 누적 후 다음 로그인 시 전달)
+    MessageSend          message_send           = 110;
+    MessageSendAck       message_send_ack       = 111;
+    MessageReceived      message_received       = 112;
+    MessageListRequest   message_list_req       = 113;
+    MessageListResponse  message_list_res       = 114;
+    MessageMarkRead      message_mark_read      = 115;
+    MessageMarkReadAck   message_mark_read_ack  = 116;
+    MessageDelete        message_delete         = 117;
+    MessageDeleteAck     message_delete_ack     = 118;
+
+    // 대화(그룹) 히스토리
+    TalkRoomHistoryRequest  talk_room_history_req = 120;
+    TalkRoomHistoryResponse talk_room_history_res = 121;
+
+    // 대화(그룹) 멤버 관리 — 초대/나가기/이름변경 + 실시간 멤버·이름 변경 이벤트
+    TalkRoomInvite       talk_room_invite        = 130;
+    TalkRoomInviteAck    talk_room_invite_ack    = 131;
+    TalkRoomLeave        talk_room_leave         = 132;
+    TalkRoomLeaveAck     talk_room_leave_ack     = 133;
+    TalkRoomRename       talk_room_rename        = 134;
+    TalkRoomRenameAck    talk_room_rename_ack    = 135;
+    TalkRoomMemberEvent  talk_room_member_event  = 136;
+    TalkRoomRenamed      talk_room_renamed       = 137;
+
+    // 로그인 시 내 대화방 목록 전체 조회 (레거시 1:1 → Room 전면 이전에 따른 사이드바 복원용)
+    TalkRoomListRequest  talk_room_list_req      = 138;
+    TalkRoomListResponse talk_room_list_res      = 139;
+  }
+}
+
+
+// ============================================================================
+// 인증
+// ============================================================================
+
+message LoginRequest {
+  string user_id        = 1;
+  //: 클라가 평문 password 를 여기에 담아 보낸다. 서버가 Argon2id 로 해시/검증.
+  // 반드시 TLS (wss) 와 함께 사용할 것 — 평문 ws 에서는 스니핑 가능.
+  string password       = 2;
+  string device_id      = 3;
+  string client_version = 4;
+}
+
+message LoginResponse {
+  enum Status {
+    UNKNOWN             = 0;
+    OK                  = 1;
+    INVALID_CREDENTIALS = 2;
+    ALREADY_ONLINE      = 3;
+    VERSION_MISMATCH    = 4;
+    SERVER_ERROR        = 99;
+  }
+  Status status        = 1;
+  string session_token = 2;
+  int64  server_ts     = 3;
+}
+
+message Logout {
+  string session_token = 1;
+}
+
+
+// ============================================================================
+// 대화 (1:1)
+// ============================================================================
+
+message TalkSend {
+  string client_talk_id   = 1;  // 클라 멱등 키 (재전송 중복 방지)
+  string to_user_id       = 2;
+  string text             = 3;
+  int64  client_ts        = 4;
+  string reply_to_talk_id = 5;  // 답글 대상 server_talk_id. 빈 문자열 = 일반 대화.
+}
+
+message TalkSendAck {
+  enum Result {
+    UNKNOWN        = 0;
+    DELIVERED      = 1;  // 수신자 온라인, 즉시 배달 완료
+    QUEUED         = 2;  // 수신자 오프라인, 아웃박스 적재
+    INVALID_TARGET = 3;
+    RATE_LIMITED   = 4;
+    SERVER_ERROR   = 99;
+  }
+  string client_talk_id = 1;
+  string server_talk_id = 2;
+  int64  server_ts      = 3;
+  Result result         = 4;
+}
+
+message TalkReceived {
+  string server_talk_id   = 1;
+  string from_user_id     = 2;
+  string text             = 3;
+  int64  server_ts        = 4;
+  string to_user_id       = 5;  //
+  string reply_to_talk_id = 6;  //
+  // 히스토리 재조회 응답 전용 필드 — 이 메시지가 실제로 수신자에게 배달됐는지.
+  // outbox 에 미배달(delivered=false) 항목이 남아있으면 false, 그 외(즉시 온라인 배달됐거나
+  // 이후 flush 로 배달 완료됨)엔 true. live push(TalkRouter/TalkOutboxFlusher)에서는 안 씀 —
+  // 그쪽은 수신자 본인에게 가는 알림이라 이 필드와 무관.
+  bool   delivered        = 7;
+}
+
+
+// ============================================================================
+// 세션 유지
+// ============================================================================
+
+message Heartbeat {
+  int64 ts = 1;
+}
+
+message HeartbeatAck {
+  int64 client_ts = 1;
+  int64 server_ts = 2;
+}
+
+
+// ============================================================================
+// 프레즌스
+// ============================================================================
+
+message PresenceEvent {
+  enum State {
+    UNKNOWN = 0;
+    ONLINE  = 1;
+    OFFLINE = 2;
+  }
+  string user_id  = 1;
+  State  state    = 2;
+  int64  server_ts = 3;
+}
+
+
+// ============================================================================
+// 대화(1:1) 히스토리 동기화
+// ============================================================================
+
+message TalkHistoryRequest {
+  int64  since_ts = 1;
+  int32  limit    = 2;
+}
+
+message TalkHistoryResponse {
+  repeated TalkReceived talks = 1;
+  bool   has_more = 2;
+}
+
+
+// ============================================================================
+// 대화(그룹) (Phase 6,
+// ============================================================================
+
+message TalkRoomCreate {
+  string name          = 1;
+  string client_req_id = 2;
+  // 생성자 본인 외 초기 멤버들. 조직도에서 여러 명을 골라 바로 그룹방을 만들 때 사용 — 방 생성과
+  // 동시에 초대까지 한 번에 처리한다(생성 후 별도로 TalkRoomInvite 를 또 부를 필요 없음).
+  repeated string member_ids = 3;
+  // 서버가 "구성원이 완전히 같은 방이 이미 있다"고 판단해 DUPLICATE_MEMBERS 를 반환했을 때,
+  // 사용자가 "그래도 새로 만들기"를 선택하면 이 플래그를 true 로 재요청한다.
+  bool   force          = 4;
+}
+
+message TalkRoomCreateAck {
+  enum Result {
+    UNKNOWN            = 0;
+    OK                 = 1;
+    INVALID_NAME       = 2;
+    // force=false 인데 동일 구성원(본인 포함) 방이 이미 있는 경우. existing_room_id 에 그 방 id 가 담긴다.
+    DUPLICATE_MEMBERS  = 3;
+    SERVER_ERROR       = 99;
+  }
+  string client_req_id   = 1;
+  string room_id         = 2;
+  int64  server_ts       = 3;
+  Result result           = 4;
+  string existing_room_id = 5;
+}
+
+message TalkRoomJoin {
+  string room_id       = 1;
+  string client_req_id = 2;
+}
+
+message TalkRoomJoinAck {
+  enum Result {
+    UNKNOWN        = 0;
+    OK             = 1;
+    ROOM_NOT_FOUND = 2;
+    ALREADY_MEMBER = 3;
+    SERVER_ERROR   = 99;
+  }
+  string client_req_id = 1;
+  string room_id       = 2;
+  int64  server_ts     = 3;
+  Result result        = 4;
+}
+
+message TalkRoomSend {
+  string client_talk_id = 1;
+  string room_id        = 2;
+  string text           = 3;
+  int64  client_ts      = 4;
+}
+
+message TalkRoomSendAck {
+  enum Result {
+    UNKNOWN        = 0;
+    OK             = 1;
+    NOT_MEMBER     = 2;
+    ROOM_NOT_FOUND = 3;
+    RATE_LIMITED   = 4;
+    SERVER_ERROR   = 99;
+  }
+  string client_talk_id = 1;
+  string server_talk_id = 2;  // server-assigned UUID
+  string room_id        = 3;
+  int64  server_ts      = 4;
+  Result result         = 5;
+}
+
+message TalkRoomReceived {
+  string server_talk_id = 1;
+  string room_id        = 2;
+  string from_user_id   = 3;
+  string text           = 4;
+  int64  server_ts      = 5;
+}
+
+
+// ============================================================================
+// 대화(그룹) 히스토리
+// ============================================================================
+message TalkRoomHistoryRequest {
+  string room_id       = 1;
+  int64  since_ts      = 2;
+  int32  limit         = 3;
+  string client_req_id = 4;
+}
+
+message TalkRoomHistoryResponse {
+  enum Status {
+    UNKNOWN          = 0;
+    OK               = 1;
+    NOT_A_MEMBER     = 2;
+    ROOM_NOT_FOUND   = 3;
+    SERVER_ERROR     = 99;
+  }
+  string client_req_id = 1;
+  Status status        = 2;
+  string room_id       = 3;
+  repeated TalkRoomReceived talks = 4;
+  bool   has_more      = 5;
+}
+
+
+// ============================================================================
+// 대화(그룹) 멤버 관리 — 초대 / 나가기 / 이름 변경 + 실시간 브로드캐스트
+// ============================================================================
+// 권한: 초대/나가기/이름변경 모두 "방장" 없이 현재 방 멤버 누구나 가능.
+
+message TalkRoomInvite {
+  string room_id             = 1;
+  repeated string target_user_ids = 2;
+  string client_req_id       = 3;
+}
+
+message TalkRoomInviteAck {
+  enum Result {
+    UNKNOWN           = 0;
+    OK                = 1;
+    ROOM_NOT_FOUND    = 2;
+    NOT_MEMBER        = 3;  // 요청한 본인이 이 방 멤버가 아님
+    NO_VALID_TARGETS  = 4;  // target_user_ids 가 비었거나 전부 이미 멤버임
+    SERVER_ERROR      = 99;
+  }
+  string client_req_id             = 1;
+  string room_id                   = 2;
+  repeated string invited_user_ids = 3;  // 실제로 새로 추가된 사람들
+  repeated string already_member_user_ids = 4;  // 이미 멤버라 건너뛴 사람들
+  int64  server_ts                 = 5;
+  Result result                    = 6;
+}
+
+message TalkRoomLeave {
+  string room_id       = 1;
+  string client_req_id = 2;
+}
+
+message TalkRoomLeaveAck {
+  enum Result {
+    UNKNOWN        = 0;
+    OK             = 1;
+    ROOM_NOT_FOUND = 2;
+    NOT_MEMBER     = 3;
+    SERVER_ERROR   = 99;
+  }
+  string client_req_id = 1;
+  string room_id       = 2;
+  // 나가고 난 뒤 멤버가 0명이 되어 방 자체가 삭제됐는지(대화 기록은 보존, 방/멤버십만 삭제).
+  bool   room_deleted  = 3;
+  int64  server_ts     = 4;
+  Result result         = 5;
+}
+
+message TalkRoomRename {
+  string room_id       = 1;
+  string new_name      = 2;
+  string client_req_id = 3;
+}
+
+message TalkRoomRenameAck {
+  enum Result {
+    UNKNOWN        = 0;
+    OK             = 1;
+    ROOM_NOT_FOUND = 2;
+    NOT_MEMBER     = 3;
+    INVALID_NAME   = 4;
+    SERVER_ERROR   = 99;
+  }
+  string client_req_id = 1;
+  string room_id       = 2;
+  Result result         = 3;
+}
+
+// 서버 push — 초대/퇴장으로 멤버 구성이 바뀔 때마다, 그 시점에 방에 있는(남은+새로 들어온) 사람들
+// 중 온라인인 사람들에게 브로드캐스트. 1:1(2인) 방에서 상대가 나가도 이 이벤트 자체는 동일하게
+// 오지만, "퇴장했습니다" 시스템 메시지를 화면에 그릴지는 클라이언트가 이벤트 시점의 인원수를 보고
+// 판단한다(2인 방이었으면 표시 안 함).
+message TalkRoomMemberEvent {
+  enum EventType {
+    UNKNOWN       = 0;
+    MEMBERS_ADDED = 1;
+    MEMBER_LEFT   = 2;
+  }
+  string room_id   = 1;
+  EventType event_type = 2;
+  string actor_user_id = 3;             // 초대를 실행한 사람 / 나간 사람 본인
+  repeated string affected_user_ids = 4; // 새로 추가된 사람들(초대) 또는 나간 사람 1명(퇴장)
+  repeated string member_ids = 5;        // 이 이벤트 반영 후 최종 멤버 목록
+  int64  server_ts = 6;
+  // 새로 초대받은 사람은 이 방을 처음 보는 것이라 이름을 몰라 자기 목록에 표시를 못 한다 —
+  // 그때마다 TalkRoomInfoRequest 를 또 왕복하지 않도록 방 이름을 이벤트에 같이 실어준다.
+  string room_name = 7;
+  // 2026-09-17 추가 — room_name 은 서버가 "방장 기준" 으로 한 번만 계산해 모든 멤버에게
+  // 동일하게 내려주므로, 방장이 아닌 멤버는 상대방 대신 자기 자신의 이름을 방 제목으로 보게
+  // 되는 버그가 있었다. 자동 명명 방(name_is_custom=false)이면 클라이언트가 member_ids 에서
+  // 자기 자신을 뺀 나머지로 이름을 직접 재계산하고, 수동 개명 방(true)이면 room_name 을
+  // 그대로 신뢰한다.
+  bool name_is_custom = 8;
+}
+
+// 서버 push — 방 이름이 바뀌면 그 순간 방에 있는 사람들에게 브로드캐스트.
+message TalkRoomRenamed {
+  string room_id  = 1;
+  string new_name = 2;
+  int64  server_ts = 3;
+}
+
+
+// ============================================================================
+// File transfer (Phase 6,
+// ============================================================================
+
+message FileUploadStart {
+  string client_req_id = 1;
+  string to_user_id    = 2;
+  string filename      = 3;
+  int64  total_size    = 4;
+  string mime_type     = 5;
+}
+
+message FileUploadStartAck {
+  enum Result {
+    UNKNOWN         = 0;
+    OK              = 1;
+    INVALID_TARGET  = 2;
+    FILE_TOO_LARGE  = 3;
+    SERVER_ERROR    = 99;
+  }
+  string client_req_id = 1;
+  string upload_id     = 2;
+  int64  server_ts     = 3;
+  Result result        = 4;
+}
+
+message FileUploadChunk {
+  string upload_id = 1;
+  int32  seq       = 2;
+  bytes  data      = 3;
+}
+
+message FileUploadComplete {
+  string upload_id     = 1;
+  string client_req_id = 2;
+}
+
+message FileUploadCompleteAck {
+  enum Result {
+    UNKNOWN       = 0;
+    OK            = 1;
+    SIZE_MISMATCH = 2;
+    NOT_FOUND     = 3;
+    SERVER_ERROR  = 99;
+  }
+  string client_req_id = 1;
+  string upload_id     = 2;
+  int64  total_bytes   = 3;
+  int64  server_ts     = 4;
+  Result result        = 5;
+}
+
+message FileAvailableNotification {
+  string upload_id    = 1;
+  string from_user_id = 2;
+  string filename     = 3;
+  int64  total_size   = 4;
+  string mime_type    = 5;
+  int64  server_ts    = 6;
+}
+
+
+// ============================================================================
+// File download
+// ============================================================================
+
+message FileDownloadRequest {
+  string upload_id     = 1;
+  string client_req_id = 2;
+}
+
+message FileDownloadStart {
+  enum Result {
+    UNKNOWN       = 0;
+    OK            = 1;
+    NOT_FOUND     = 2;
+    NOT_ALLOWED   = 3;
+    NOT_COMPLETE  = 4;
+    SERVER_ERROR  = 99;
+  }
+  string client_req_id = 1;
+  string upload_id     = 2;
+  string filename      = 3;
+  string mime_type     = 4;
+  int64  total_size    = 5;
+  int32  total_chunks  = 6;
+  int64  server_ts     = 7;
+  Result result        = 8;
+}
+
+message FileDownloadChunk {
+  string upload_id = 1;
+  int32  seq       = 2;
+  bytes  data      = 3;
+  bool   is_last   = 4;
+}
+
+
+// ============================================================================
+// 대화(그룹) metadata query
+// ============================================================================
+
+message TalkRoomInfoRequest {
+  string room_id       = 1;
+  string client_req_id = 2;
+}
+
+message TalkRoomInfoResponse {
+  enum Result {
+    UNKNOWN        = 0;
+    OK             = 1;
+    ROOM_NOT_FOUND = 2;
+    SERVER_ERROR   = 99;
+  }
+  string client_req_id = 1;
+  string room_id       = 2;
+  string name          = 3;
+  string owner_user_id = 4;
+  int32  member_count  = 5;
+  int64  server_ts     = 6;
+  Result result        = 7;
+  repeated string member_ids = 8;
+  // 2026-09-17 추가 — name 은 방장 기준 자동명명 결과라 방장이 아닌 멤버에게는 틀린 이름으로
+  // 보일 수 있다(TalkRoomMemberEvent.name_is_custom 과 동일한 목적).
+  bool name_is_custom = 9;
+}
+
+// 2026-09-17 사용자 요구사항 — 로그인 시 내가 속한 대화방 전부를 사이드바에 미리 채우기 위해
+// 필요. 예전엔 이 조회 자체가 없어서, 새로 초대된 방은 실시간 이벤트로 보이지만 이전 세션에서
+// 이미 멤버였던 방은 재로그인 시 사이드바에서 통째로 사라지는 문제가 있었다.
+message TalkRoomListRequest {
+  string client_req_id = 1;
+}
+
+message TalkRoomListItem {
+  string room_id           = 1;
+  string name              = 2;
+  int32  member_count      = 3;
+  // 2026-09-17 추가 — 재접속 시 사이드바에 마지막 대화 미리보기가 안 보이던 문제 수정용.
+  // 메시지가 아예 없던 방이면 비어있음/0으로 온다.
+  string last_message_text = 4;
+  int64  last_message_ts   = 5;
+  // 2026-09-17 추가 — name/name_is_custom 의미는 TalkRoomMemberEvent 와 동일. 자동 명명 방이면
+  // 클라이언트가 member_ids 에서 자기 자신을 뺀 나머지로 이름을 재계산해야 방장이 아닌 사람도
+  // 상대방 이름을 올바르게 본다.
+  bool name_is_custom = 6;
+  repeated string member_ids = 7;
+}
+
+message TalkRoomListResponse {
+  enum Result {
+    UNKNOWN      = 0;
+    OK           = 1;
+    SERVER_ERROR = 99;
+  }
+  string client_req_id           = 1;
+  repeated TalkRoomListItem rooms = 2;
+  Result result                   = 3;
+}
+
+
+// ============================================================================
+// Org directory
+// ============================================================================
+
+message OrgListRequest {
+  string client_req_id = 1;
+}
+
+message OrgUnit {
+  string path        = 1;
+  string parent_path = 2;
+  string name        = 3;
+  int32  depth       = 4;
+  int32  sort_order  = 5;
+}
+
+message OrgMember {
+  string user_id    = 1;
+  string org_path   = 2;
+  string email      = 3;
+  string phone      = 4;
+  string mobile     = 5;
+  string title      = 6;
+  int32  sort_order = 7;
+}
+
+message OrgListResponse {
+  enum Result {
+    UNKNOWN      = 0;
+    OK           = 1;
+    SERVER_ERROR = 99;
+  }
+  string             client_req_id = 1;
+  repeated OrgUnit   units         = 2;
+  repeated OrgMember members       = 3;
+  int32              unit_count    = 4;
+  int32              member_count  = 5;
+  int64              server_ts     = 6;
+  Result             result        = 7;
+}
+
+
+// ============================================================================
+// 대화(1:1) 검색
+// ============================================================================
+message TalkSearchRequest {
+  string client_req_id = 1;
+  string keyword       = 2;
+  int64  since_ts      = 3;
+  int64  until_ts      = 4;
+  int32  limit         = 5;
+}
+
+message TalkSearchResponse {
+  enum Result {
+    UNKNOWN      = 0;
+    OK           = 1;
+    SERVER_ERROR = 99;
+  }
+  string                client_req_id = 1;
+  repeated TalkReceived talks         = 2;
+  int32                 matched_count = 3;
+  bool                  has_more      = 4;
+  int64                 server_ts     = 5;
+  Result                result        = 6;
+}
+
+
+// ============================================================================
+// 푸시 알림 토큰 등록
+// ============================================================================
+message PushTokenRegisterRequest {
+  string client_req_id = 1;
+  string device_id     = 2;
+  string platform      = 3;
+  string token         = 4;
+}
+
+message PushTokenRegisterResponse {
+  enum Result {
+    UNKNOWN         = 0;
+    OK              = 1;
+    INVALID_REQUEST = 2;
+    SERVER_ERROR    = 99;
+  }
+  string client_req_id = 1;
+  int64  server_ts     = 2;
+  Result result        = 3;
+}
+
+message PushTokenUnregisterRequest {
+  string client_req_id = 1;
+  string device_id     = 2;
+}
+
+message PushTokenUnregisterResponse {
+  enum Result {
+    UNKNOWN      = 0;
+    OK           = 1;
+    SERVER_ERROR = 99;
+  }
+  string client_req_id = 1;
+  int64  server_ts     = 2;
+  int32  deleted_count = 3;
+  Result result        = 4;
+}
+
+
+// ============================================================================
+// 쪽지 — 비대화형 1:N 공지성 메시지
+// ============================================================================
+
+message MessageSend {
+  string client_message_id = 1;
+  repeated string recipient_ids = 2;
+  string title = 3;
+  string body  = 4;
+  string attachment_upload_id = 5;
+}
+
+message MessageSendAck {
+  enum Result {
+    UNKNOWN          = 0;
+    OK               = 1;
+    INVALID_REQUEST  = 2;
+    PARTIAL_FAILURE  = 3;
+    SERVER_ERROR     = 99;
+  }
+  string client_message_id = 1;
+  string server_message_id = 2;
+  int64  sent_at           = 3;
+  Result result            = 4;
+  repeated MessageRecipientResult recipient_results = 5;
+}
+
+message MessageRecipientResult {
+  string recipient_id = 1;
+  bool   delivered    = 2;
+  string reason       = 3;
+}
+
+message MessageReceived {
+  string server_message_id = 1;
+  string from_user_id      = 2;
+  string recipient_id      = 3;
+  string title             = 4;
+  string body              = 5;
+  int64  sent_at           = 6;
+  string attachment_upload_id = 7;
+  int64  read_at           = 8;
+}
+
+message MessageListRequest {
+  enum Box {
+    INBOX = 0;
+    SENT  = 1;
+  }
+  string client_req_id = 1;
+  Box    box           = 2;
+  int64  since_ts      = 3;
+  int32  limit         = 4;
+}
+
+message MessageListResponse {
+  enum Status {
+    UNKNOWN      = 0;
+    OK           = 1;
+    SERVER_ERROR = 99;
+  }
+  string client_req_id = 1;
+  Status status        = 2;
+  repeated MessageEntry entries = 3;
+  bool   has_more      = 4;
+}
+
+message MessageEntry {
+  string server_message_id = 1;
+  string from_user_id      = 2;
+  repeated string recipient_ids = 3;
+  string title             = 4;
+  string body              = 5;
+  int64  sent_at           = 6;
+  int64  read_at           = 7;
+  bool   has_attachment    = 8;
+  string attachment_upload_id = 9;
+}
+
+message MessageMarkRead {
+  string client_req_id     = 1;
+  string server_message_id = 2;
+}
+
+message MessageMarkReadAck {
+  enum Result {
+    UNKNOWN      = 0;
+    OK           = 1;
+    NOT_FOUND    = 2;
+    NOT_OWNER    = 3;
+    SERVER_ERROR = 99;
+  }
+  string client_req_id     = 1;
+  string server_message_id = 2;
+  int64  read_at           = 3;
+  Result result            = 4;
+}
+
+message MessageDelete {
+  string client_req_id     = 1;
+  string server_message_id = 2;
+}
+
+message MessageDeleteAck {
+  enum Result {
+    UNKNOWN      = 0;
+    OK           = 1;
+    NOT_FOUND    = 2;
+    NOT_OWNER    = 3;
+    SERVER_ERROR = 99;
+  }
+  string client_req_id     = 1;
+  string server_message_id = 2;
+  Result result            = 3;
+}
