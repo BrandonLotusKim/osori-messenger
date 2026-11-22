@@ -82,7 +82,8 @@ public sealed partial class MessengerClient
         int chunkSize = 64 * 1024,
         string mimeType = "",
         CancellationToken ct = default,
-        string roomId = "")
+        string roomId = "",
+        IProgress<long>? progress = null)
     {
         if (chunkSize <= 0 || chunkSize > 1 * 1024 * 1024)
         {
@@ -130,6 +131,8 @@ public sealed partial class MessengerClient
             };
             await SendAsync(chunkEnvelope, ct);
             seq++;
+            // 보낸 바이트 수(누적) — 보낸 쪽 말풍선의 "업로드 중... N%" 표시용
+            progress?.Report(offset + size);
         }
 
         var completeEnvelope = new Envelope

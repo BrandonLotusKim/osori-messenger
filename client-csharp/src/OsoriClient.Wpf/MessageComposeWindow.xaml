@@ -80,7 +80,7 @@
                         BorderBrush="{StaticResource BorderBrush}"
                         BorderThickness="1"
                         CornerRadius="{StaticResource CornerSmall}"
-                        Padding="4,3"
+                        Padding="10,3"
                         MinHeight="{StaticResource InputHeight}"
                         MaxHeight="96"
                         Cursor="IBeam"
@@ -128,7 +128,7 @@
                             </ItemsControl>
                             <TextBox x:Name="RecipientsBox"
                                      MinWidth="120"
-                                     Margin="2,2,0,2"
+                                     Margin="0,2,0,2"
                                      VerticalAlignment="Center"
                                      Background="Transparent"
                                      Foreground="{StaticResource TextPrimaryBrush}"
@@ -169,6 +169,7 @@
             <TextBlock Grid.Row="0" Text="본문" Style="{StaticResource LabelText}" Margin="0,0,0,4" />
             <TextBox Grid.Row="1" x:Name="BodyBox"
                      Style="{StaticResource AppTextBox}"
+                     Padding="10,6"
                      Height="Auto"
                      VerticalContentAlignment="Top"
                      AcceptsReturn="True"

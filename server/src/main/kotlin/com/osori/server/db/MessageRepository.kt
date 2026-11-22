@@ -32,7 +32,17 @@ open class MessageRepository(private val db: Database) {
         val readAtMillis: Long?,
         val hasAttachment: Boolean,
         val attachmentUploadId: String?,
+        val attachmentFilename: String? = null,
+        val attachmentSize: Long = 0,
     )
+
+    private companion object {
+        // 첨부 업로드의 파일 이름·크기 (업로드 행이 없으면 NULL)
+        const val ATTACH_NAME_SQL =
+            "(SELECT fu.filename FROM file_uploads fu WHERE fu.upload_id::text = m.attachment_upload_id) AS attach_name"
+        const val ATTACH_SIZE_SQL =
+            "(SELECT fu.total_size FROM file_uploads fu WHERE fu.upload_id::text = m.attachment_upload_id) AS attach_size"
+    }
 
     open fun saveMemo(
         serverMessageId: String,
@@ -142,7 +152,9 @@ open class MessageRepository(private val db: Database) {
                        extract(epoch from mr.read_at)*1000 AS read_ms,
                        m.attachment_upload_id,
                        (SELECT string_agg(mr2.recipient_id, ',' ORDER BY mr2.recipient_id)
-                        FROM message_recipients mr2 WHERE mr2.server_message_id = m.server_message_id) AS all_recipients
+                        FROM message_recipients mr2 WHERE mr2.server_message_id = m.server_message_id) AS all_recipients,
+                       $ATTACH_NAME_SQL,
+                       $ATTACH_SIZE_SQL
                 FROM message_recipients mr
                 JOIN messages m ON m.server_message_id = mr.server_message_id
                 WHERE mr.recipient_id = ?
@@ -172,6 +184,8 @@ open class MessageRepository(private val db: Database) {
                                 readAtMillis = readMs?.toLong(),
                                 hasAttachment = !attachId.isNullOrEmpty(),
                                 attachmentUploadId = attachId,
+                                attachmentFilename = rs.getString(9),
+                                attachmentSize = rs.getLong(10),
                             ),
                         )
                     }
@@ -188,7 +202,9 @@ open class MessageRepository(private val db: Database) {
                 SELECT m.server_message_id, m.from_user_id, m.title, m.body,
                        extract(epoch from m.sent_at)*1000 AS sent_ms,
                        m.attachment_upload_id,
-                       string_agg(mr.recipient_id, ',' ORDER BY mr.recipient_id) AS recipients
+                       string_agg(mr.recipient_id, ',' ORDER BY mr.recipient_id) AS recipients,
+                       $ATTACH_NAME_SQL,
+                       $ATTACH_SIZE_SQL
                 FROM messages m
                 LEFT JOIN message_recipients mr ON mr.server_message_id = m.server_message_id
                 WHERE m.from_user_id = ?
@@ -218,6 +234,8 @@ open class MessageRepository(private val db: Database) {
                                 readAtMillis = null,
                                 hasAttachment = !attachId.isNullOrEmpty(),
                                 attachmentUploadId = attachId,
+                                attachmentFilename = rs.getString(8),
+                                attachmentSize = rs.getLong(9),
                             ),
                         )
                     }
@@ -233,7 +251,9 @@ open class MessageRepository(private val db: Database) {
                 """
                 SELECT m.server_message_id, m.from_user_id, m.title, m.body,
                        extract(epoch from m.sent_at)*1000 AS sent_ms,
-                       m.attachment_upload_id
+                       m.attachment_upload_id,
+                       $ATTACH_NAME_SQL,
+                       $ATTACH_SIZE_SQL
                 FROM message_recipients mr
                 JOIN messages m ON m.server_message_id = mr.server_message_id
                 WHERE mr.recipient_id = ?
@@ -260,6 +280,8 @@ open class MessageRepository(private val db: Database) {
                                 readAtMillis = null,
                                 hasAttachment = !attachId.isNullOrEmpty(),
                                 attachmentUploadId = attachId,
+                                attachmentFilename = rs.getString(7),
+                                attachmentSize = rs.getLong(8),
                             ),
                         )
                     }

@@ -205,6 +205,43 @@ class MessageHandlerTest {
         assertTrue(env.messageListRes.hasMore)
     }
 
+    @Test
+    fun `첨부 쪽지는 목록·실시간 푸시에 파일 이름과 크기를 싣는다`() = runBlocking {
+        val repo = newRepoStub()
+        every { repo.fetchInbox(eq("bob"), any(), any()) } returns listOf(
+            MessageRepository.MemoRow(
+                serverMessageId = "m-1", fromUserId = "alice", recipientIds = listOf("bob", "carol"),
+                title = "t", body = "b", sentAtMillis = 1000, readAtMillis = null,
+                hasAttachment = true, attachmentUploadId = "up-1",
+                attachmentFilename = "report.pdf", attachmentSize = 2048,
+            ),
+        )
+        justRun { repo.saveMemo(any(), any(), any(), any(), any(), any(), any()) }
+        every { repo.markDelivered(any(), any()) } returns 1
+
+        val sessions = SessionManager()
+        val alice = FakeClientSession().apply { userId = "alice" }
+        val bob = FakeClientSession().apply { userId = "bob" }
+        sessions.bind("alice", alice)
+        sessions.bind("bob", bob)
+        val handler = MessageHandler(
+            repo = repo, sessions = sessions,
+            attachmentInfo = { id -> if (id == "up-2") "photo.png" to 512L else null },
+        )
+
+        handler.handleList(bob, 1L, MessageListRequest.newBuilder().setClientReqId("r").setBox(MessageListRequest.Box.INBOX).build())
+        val entry = parseAck(bob).messageListRes.entriesList.single()
+        assertEquals("report.pdf", entry.attachmentFilename)
+        assertEquals(2048L, entry.attachmentSize)
+        bob.sentFrames.clear()
+
+        handler.handleSend(alice, 2L, MessageSend.newBuilder().setClientMessageId("c").setTitle("t")
+            .addRecipientIds("bob").setAttachmentUploadId("up-2").build())
+        val push = Envelope.parseFrom((bob.sentFrames.single() as Frame.Binary).readBytes()).messageReceived
+        assertEquals("photo.png", push.attachmentFilename)
+        assertEquals(512L, push.attachmentSize)
+    }
+
     // ============== handleMarkRead ==============
 
     @Test

@@ -26,6 +26,8 @@ class MessageHandler(
     private val sessions: SessionManager,
     /** (uploadId, userId) → 그 사용자가 올린 업로드인지. null 이면 검사하지 않음(메모리 모드·옛 테스트). */
     private val attachmentOwnedBy: ((String, String) -> Boolean)? = null,
+    /** uploadId → (파일 이름, 크기). 실시간 푸시에 첨부 정보를 싣는 데 쓴다. null 이면 빈 값. */
+    private val attachmentInfo: ((String) -> Pair<String, Long>?)? = null,
 ) {
 
     suspend fun handleSend(session: ClientSession, sequence: Long, req: MessageSend) {
@@ -58,6 +60,8 @@ class MessageHandler(
             sendSendAck(session, sequence, req.clientMessageId, "", 0, MessageSendAck.Result.INVALID_REQUEST, emptyList())
             return
         }
+
+        val attachMeta = attachId?.let { id -> runCatching { attachmentInfo?.invoke(id) }.getOrNull() }
 
         val recipientResults = mutableListOf<MessageRecipientResult>()
         val deliverables = mutableListOf<String>()
@@ -97,6 +101,8 @@ class MessageHandler(
                         .setBody(req.body)
                         .setSentAt(sentAtMs)
                         .setAttachmentUploadId(attachId ?: "")
+                        .setAttachmentFilename(attachMeta?.first ?: "")
+                        .setAttachmentSize(attachMeta?.second ?: 0L)
                         .setReadAt(0)
                         .build(),
                 )
@@ -145,6 +151,8 @@ class MessageHandler(
                 .setReadAt(row.readAtMillis ?: 0L)
                 .setHasAttachment(row.hasAttachment)
                 .setAttachmentUploadId(row.attachmentUploadId ?: "")
+                .setAttachmentFilename(row.attachmentFilename ?: "")
+                .setAttachmentSize(row.attachmentSize)
                 .build()
         }
         sendListResponse(session, sequence, req.clientReqId, MessageListResponse.Status.OK, entries, hasMore)
@@ -215,6 +223,8 @@ class MessageHandler(
                         .setBody(row.body)
                         .setSentAt(row.sentAtMillis)
                         .setAttachmentUploadId(row.attachmentUploadId ?: "")
+                        .setAttachmentFilename(row.attachmentFilename ?: "")
+                        .setAttachmentSize(row.attachmentSize)
                         .setReadAt(0)
                         .build(),
                 )

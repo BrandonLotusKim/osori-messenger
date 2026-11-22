@@ -47,6 +47,26 @@ public partial class MessageDetailWindow : Window
         BodyText.Text = row.Body;
 
         AttachmentChip.Visibility = row.AttachmentVisibility;
+        AttachmentStatusText.Text = AttachmentLabel();
+        AttachmentStatusText.ToolTip = AttachmentStatusText.Text;
+
+        // 받는 사람 전체 목록 — 목록의 "a 외 N명" 대신 모두 보여 준다.
+        // 보낸쪽지함은 첫 줄(받는 사람)에, 받은쪽지함은 보낸 사람 아래 둘째 줄에.
+        var recipients = row.RecipientIds.Where(r => !string.IsNullOrWhiteSpace(r)).ToList();
+        var recipientsText = recipients.Count == 0
+            ? string.Empty
+            : $"받는 사람 ({recipients.Count}명) · {string.Join(", ", recipients)}";
+        if (isSentBox && recipients.Count > 0)
+        {
+            HeaderLine.Text = $"받는 사람 ({recipients.Count}명)";
+            RecipientsLine.Text = string.Join(", ", recipients);
+            RecipientsLine.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            RecipientsLine.Text = recipientsText;
+            RecipientsLine.Visibility = recipients.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        }
 
         // 보낸쪽지함(내가 쓴 쪽지)엔 답장/전체회신이 성립하지 않음 — 전달만 허용
         if (isSentBox)
@@ -126,6 +146,11 @@ public partial class MessageDetailWindow : Window
         return $"\n\n---- 원본 쪽지 ({_row.CounterpartLabel}, {_row.SentAtText}) ----\n" + string.Join("\n", quotedLines);
     }
 
+    /// <summary>"파일명 (크기)" — 서버가 이름을 못 준 옛 쪽지는 "첨부파일 1개".</summary>
+    private string AttachmentLabel() => string.IsNullOrEmpty(_row.AttachmentFilename)
+        ? "첨부파일 1개"
+        : $"{_row.AttachmentFilename} ({TalkListFormat.FileSize(_row.AttachmentSize)})";
+
     private async void AttachmentDownloadButton_OnClick(object sender, RoutedEventArgs e)
     {
         if (string.IsNullOrEmpty(_row.AttachmentUploadId)) return;
@@ -142,7 +167,7 @@ public partial class MessageDetailWindow : Window
             var save = new SaveFileDialog { Title = "첨부파일 저장", FileName = file.Filename, Filter = "모든 파일|*.*" };
             if (save.ShowDialog(this) != true)
             {
-                AttachmentStatusText.Text = "첨부파일 1개";
+                AttachmentStatusText.Text = AttachmentLabel();
                 return;
             }
             await System.IO.File.WriteAllBytesAsync(save.FileName, file.Bytes);

@@ -502,13 +502,18 @@
                 <TextBlock Text="아직 주고받은 메시지가 없습니다"
                            FontSize="15" FontWeight="SemiBold"
                            HorizontalAlignment="Center" />
-                <TextBlock Text="아래 입력창에 첫 메시지를 써 보세요. + 버튼으로 파일도 보낼 수 있습니다."
+                <!-- 문장 단위로 줄을 나눠 단어 중간("파일 / 도")에서 끊기지 않게 한다 -->
+                <TextBlock Text="아래 입력창에 첫 메시지를 써 보세요."
                            Foreground="{StaticResource TextSecondaryBrush}"
                            FontSize="{StaticResource FontMeta}"
                            Margin="0,8,0,0"
                            TextAlignment="Center"
-                           TextWrapping="Wrap"
-                           MaxWidth="280"
+                           HorizontalAlignment="Center" />
+                <TextBlock Text="+ 버튼으로 파일도 보낼 수 있습니다."
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           FontSize="{StaticResource FontMeta}"
+                           Margin="0,2,0,0"
+                           TextAlignment="Center"
                            HorizontalAlignment="Center" />
             </StackPanel>
 

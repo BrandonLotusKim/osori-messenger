@@ -7,24 +7,14 @@ using System.Windows.Media;
 namespace OsoriClient.Wpf.Helpers;
 
 /// <summary>
-/// §10 Avatar 색 해시 — 사용자 ID 를 SHA1 → 첫 바이트 mod 8 → 팔레트 인덱스.
+/// 아바타 색 — 테마 리소스(AvatarPalette0~7) 조회용. 인덱스 계산은 Core 의 AvatarStyle 과 공유해
 /// 같은 사용자는 모든 화면에서 같은 색을 가진다.
 /// </summary>
 public static class AvatarPaletteHelper
 {
     public const int PaletteSize = 8;
 
-    public static int GetIndex(string? userId)
-    {
-        if (string.IsNullOrEmpty(userId))
-        {
-            return 0;
-        }
-
-        var bytes = Encoding.UTF8.GetBytes(userId);
-        var hash = SHA1.HashData(bytes);
-        return hash[0] % PaletteSize;
-    }
+    public static int GetIndex(string? userId) => OsoriClient.Core.AvatarStyle.Index(userId);
 
     public static Brush GetBrush(string? userId)
     {

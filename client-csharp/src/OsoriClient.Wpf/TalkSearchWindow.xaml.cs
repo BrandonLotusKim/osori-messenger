@@ -48,6 +48,8 @@ public partial class TalkSearchWindow : Window
         public long ServerTs { get; init; }
         public string TimestampText => DateTimeOffset.FromUnixTimeMilliseconds(ServerTs).LocalDateTime.ToString("yyyy-MM-dd HH:mm");
         public string Counterpart { get; init; } = "";
+        /// <summary>본문에서 강조할 검색어.</summary>
+        public string Keyword { get; init; } = "";
         public string SenderText => string.IsNullOrEmpty(FromUserId) ? "" : $" · {FromUserId}";
     }
 
@@ -86,6 +88,7 @@ public partial class TalkSearchWindow : Window
                     FromUserId = h.FromUserId,
                     Text = h.Text,
                     ServerTs = h.ServerTs,
+                    Keyword = keyword,
                 });
             }
 
@@ -99,6 +102,7 @@ public partial class TalkSearchWindow : Window
                     FromUserId = m.FromUserId,
                     Text = m.Text,
                     ServerTs = m.ServerTs,
+                    Keyword = keyword,
                     Counterpart = counterpart,
                 });
             }

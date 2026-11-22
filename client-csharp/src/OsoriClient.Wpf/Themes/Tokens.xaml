@@ -415,7 +415,8 @@
                                        Foreground="{StaticResource TextMutedBrush}"
                                        IsHitTestVisible="False"
                                        Visibility="Collapsed" />
-                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                            <!-- Padding 은 입력칸 내부(텍스트 뷰)에서 이미 적용된다. 여기서 Margin 으로 한 번 더 주면 글자가 두 배 안쪽에서 시작했다. -->
+                        <ScrollViewer x:Name="PART_ContentHost" Margin="0"
                                           VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
                         </Grid>
                     </Border>
@@ -455,7 +456,8 @@
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
                             CornerRadius="{StaticResource CornerSmall}">
-                        <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                        <!-- Padding 은 입력칸 내부(텍스트 뷰)에서 이미 적용된다. 여기서 Margin 으로 한 번 더 주면 글자가 두 배 안쪽에서 시작했다. -->
+                        <ScrollViewer x:Name="PART_ContentHost" Margin="0"
                                       VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
                     </Border>
                     <ControlTemplate.Triggers>

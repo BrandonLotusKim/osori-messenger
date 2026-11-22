@@ -260,6 +260,13 @@ fun Application.configureServer(
                 id != null && repo.getUpload(id)?.fromUserId == userId
             }
         },
+        attachmentInfo = fileRepository?.let { repo ->
+            { uploadId: String ->
+                runCatching { java.util.UUID.fromString(uploadId) }.getOrNull()
+                    ?.let { repo.getUpload(it) }
+                    ?.let { it.filename to it.totalSize }
+            }
+        },
     )
     val talkRoomHistoryHandler = com.osori.server.talk.TalkRoomHistoryHandler(talkRoomRepository)
     val loginHandler = LoginHandler(

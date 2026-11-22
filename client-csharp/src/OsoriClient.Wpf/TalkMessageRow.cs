@@ -112,8 +112,10 @@ public sealed class TalkMessageRow : INotifyPropertyChanged
         get => _text;
         set
         {
-            if (_text == value) return;
-            _text = value;
+            // 파일 메시지(기록 포함)는 크기 "(41 B)"가 줄바꿈으로 갈라지지 않게 묶는다.
+            var text = RoomFileText.KeepSizeTogether(value);
+            if (_text == text) return;
+            _text = text;
             OnPropertyChanged();
         }
     }
@@ -153,25 +155,10 @@ public sealed class TalkMessageRow : INotifyPropertyChanged
     /// <summary>그룹방 표시용 발신자 이름(내 메시지엔 표시 안 함).</summary>
     public string SenderLabel => IsMine ? string.Empty : Sender;
 
-    private static readonly string[] AvatarPalette =
-    {
-        "#E57373", "#BA68C8", "#7986CB", "#4FC3F7",
-        "#4DB6AC", "#81C784", "#FFB74D", "#A1887F",
-    };
+    /// <summary>발신자 아바타 색 — 대화 목록·헤더와 같은 공용 함수.</summary>
+    public string SenderAvatarHex => AvatarStyle.Hex(Sender);
 
-    /// <summary>발신자 아바타 색 (userId SHA1 % 8).</summary>
-    public string SenderAvatarHex
-    {
-        get
-        {
-            if (string.IsNullOrEmpty(Sender)) return "#BDBDBD";
-            using var sha = System.Security.Cryptography.SHA1.Create();
-            var bytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(Sender));
-            return AvatarPalette[bytes[0] % AvatarPalette.Length];
-        }
-    }
-
-    public string SenderInitial => string.IsNullOrEmpty(Sender) ? "?" : Sender[0].ToString().ToUpperInvariant();
+    public string SenderInitial => AvatarStyle.Initial(Sender);
 
     /// <summary>내 메시지 상태 배지 이모지 (받은 메시지엔 빈 문자열).</summary>
     public string StatusIcon => Direction == MessageDirection.Sent

@@ -835,6 +835,9 @@ message MessageReceived {
   int64  sent_at           = 6;
   string attachment_upload_id = 7;
   int64  read_at           = 8;
+  // 첨부 파일 이름·크기(바이트). 첨부가 없거나 업로드 정보를 못 찾으면 빈 값/0.
+  string attachment_filename = 9;
+  int64  attachment_size     = 10;
 }
 
 message MessageListRequest {
@@ -870,6 +873,9 @@ message MessageEntry {
   int64  read_at           = 7;
   bool   has_attachment    = 8;
   string attachment_upload_id = 9;
+  // 첨부 파일 이름·크기(바이트). 첨부가 없거나 업로드 정보를 못 찾으면 빈 값/0.
+  string attachment_filename = 10;
+  int64  attachment_size     = 11;
 }
 
 message MessageMarkRead {

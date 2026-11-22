@@ -84,6 +84,13 @@
                                Foreground="{StaticResource TextMutedBrush}"
                                FontSize="{StaticResource FontMeta}" />
                 </Grid>
+                <!-- 받는 사람 전체 목록 (여러 명이면 모두 표시) -->
+                <TextBlock x:Name="RecipientsLine"
+                           Margin="0,4,0,0"
+                           Foreground="{StaticResource TextMutedBrush}"
+                           FontSize="{StaticResource FontMeta}"
+                           TextWrapping="Wrap"
+                           AutomationProperties.AutomationId="MessageRecipientsText" />
                 <TextBlock x:Name="TitleText"
                            FontSize="18"
                            FontWeight="SemiBold"
@@ -111,8 +118,10 @@
                 <TextBlock Grid.Column="1" x:Name="AttachmentStatusText"
                            Text="첨부파일 1개"
                            VerticalAlignment="Center"
+                           Margin="0,0,8,0"
                            Foreground="{StaticResource TextPrimaryBrush}"
-                           TextTrimming="CharacterEllipsis" />
+                           TextTrimming="CharacterEllipsis"
+                           AutomationProperties.AutomationId="MessageAttachmentText" />
                 <Button Grid.Column="2" x:Name="AttachmentDownloadButton"
                         Style="{StaticResource SecondaryButton}"
                         Padding="12,4" Height="28"

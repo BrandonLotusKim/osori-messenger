@@ -159,17 +159,12 @@ public partial class TalkWindow : Window
         if (_mode == Mode.Room)
         {
             HeaderMemberButton.Visibility = Visibility.Visible;
-            HeaderAvatarInitial.Text = "방";
-            HeaderAvatarBorder.Background = new SolidColorBrush(
-                (Color)ColorConverter.ConvertFromString("#BA68C8"));
-            HeaderPresenceDot.Visibility = Visibility.Collapsed;
+            ApplyGroupHeaderAvatar();
             HeaderMetaText.Text = "그룹 채팅";
             return;
         }
 
-        HeaderAvatarInitial.Text = string.IsNullOrEmpty(_displayName)
-            ? "?"
-            : _displayName[0].ToString().ToUpperInvariant();
+        HeaderAvatarInitial.Text = AvatarStyle.Initial(_displayName);
         HeaderAvatarBorder.Background = new SolidColorBrush(HashColor(_counterpartKey));
         HeaderMetaText.Text = string.Empty;
     }
@@ -184,12 +179,10 @@ public partial class TalkWindow : Window
         var peer = RoomPeers.TryGetDirectCounterpart(_roomMembers, _currentUserId);
         if (peer is null)
         {
-            HeaderAvatarInitial.Text = "방";
-            HeaderAvatarBorder.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#BA68C8"));
-            HeaderPresenceDot.Visibility = Visibility.Collapsed;
+            ApplyGroupHeaderAvatar();
             return;
         }
-        HeaderAvatarInitial.Text = peer[0].ToString().ToUpperInvariant();
+        HeaderAvatarInitial.Text = AvatarStyle.Initial(peer);
         HeaderAvatarBorder.Background = new SolidColorBrush(HashColor(peer));
         var online = _client.Presence.IsOnline(peer);
         HeaderPresenceDot.Visibility = Visibility.Visible;
@@ -209,22 +202,19 @@ public partial class TalkWindow : Window
         });
     }
 
+    /// <summary>대화 목록(TalkRow)과 같은 공용 함수(AvatarStyle)로 색을 계산한다.</summary>
     private static Color HashColor(string id)
+        => (Color)ColorConverter.ConvertFromString(AvatarStyle.Hex(id));
+
+    /// <summary>
+    /// 그룹 방 헤더 아바타 — 대화 목록과 같은 규칙(방 이름 첫 글자, 방 ID 기준 색).
+    /// 예전엔 목록은 이름 첫 글자, 헤더는 "방"+고정 보라색이라 같은 방이 다르게 보였다.
+    /// </summary>
+    private void ApplyGroupHeaderAvatar()
     {
-        var palette = new[]
-        {
-            "#E57373", "#BA68C8", "#7986CB", "#4FC3F7",
-            "#4DB6AC", "#81C784", "#FFB74D", "#A1887F",
-        };
-
-        if (string.IsNullOrEmpty(id))
-        {
-            return (Color)ColorConverter.ConvertFromString("#BDBDBD");
-        }
-
-        using var sha = System.Security.Cryptography.SHA1.Create();
-        var bytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(id));
-        return (Color)ColorConverter.ConvertFromString(palette[bytes[0] % palette.Length]);
+        HeaderAvatarInitial.Text = AvatarStyle.Initial(HeaderTitleText.Text);
+        HeaderAvatarBorder.Background = new SolidColorBrush(HashColor(_counterpartKey));
+        HeaderPresenceDot.Visibility = Visibility.Collapsed;
     }
 
     private async void TalkWindow_OnLoaded(object sender, RoutedEventArgs e)
@@ -310,13 +300,13 @@ public partial class TalkWindow : Window
                 RebuildMemberDisplayItems();
                 DrawerHeaderText.Text = $"멤버 ({info.MemberCount})";
                 HeaderMetaText.Text = $"멤버 {info.MemberCount}명";
-                UpdateRoomHeaderAppearance();
                 var resolvedName = MainWindow.ResolveRoomDisplayName(info.Name, info.NameIsCustom, info.MemberIds, _currentUserId, _counterpartKey);
                 if (!string.IsNullOrWhiteSpace(resolvedName))
                 {
                     Title = $"{resolvedName} - 오소리 메신저";
                     HeaderTitleText.Text = resolvedName;
                 }
+                UpdateRoomHeaderAppearance();
             });
         }
         catch (Exception ex)
@@ -420,7 +410,7 @@ public partial class TalkWindow : Window
 
     private TalkMessageRow BuildHistoryRow(TalkReceived msg)
     {
-        // x 버그 수정: 예전엔 본인이 보낸 메시지는 실제 배달 여부와 무관하게
+        // 버그 수정: 예전엔 본인이 보낸 메시지는 실제 배달 여부와 무관하게
         // 무조건 Delivered(✓)로 하드코딩했음 — 상대가 계속 오프라인이라 아직도
         // 아웃박스에 대기 중이어도 창을 닫았다 열면 체크로 잘못 표시됐다.
         // 서버가 history 응답에 실어주는 msg.Delivered(outbox 미배달 여부 기반)를 반영.
@@ -1107,7 +1097,7 @@ public partial class TalkWindow : Window
             _memberDisplayItems.Add(new MemberDisplayItem
             {
                 UserId = userId,
-                AvatarInitial = string.IsNullOrEmpty(userId) ? "?" : userId[0].ToString().ToUpperInvariant(),
+                AvatarInitial = AvatarStyle.Initial(userId),
                 AvatarColorHex = HashColor(userId),
             });
         }
@@ -1335,6 +1325,7 @@ public partial class TalkWindow : Window
             {
                 Title = $"{resolvedName} - 오소리 메신저";
                 HeaderTitleText.Text = resolvedName;
+                UpdateRoomHeaderAppearance();
             }
 
             if (e.EventType == TalkRoomMemberEvent.Types.EventType.MembersAdded)
@@ -1360,6 +1351,7 @@ public partial class TalkWindow : Window
         {
             Title = $"{e.NewName} - 오소리 메신저";
             HeaderTitleText.Text = e.NewName;
+            UpdateRoomHeaderAppearance();
         });
     }
 
@@ -1411,25 +1403,38 @@ public partial class TalkWindow : Window
     {
         var fileName = System.IO.Path.GetFileName(filePath);
         var fileInfo = new System.IO.FileInfo(filePath);
-        var row = new TalkMessageRow(Guid.NewGuid().ToString("N"), _currentUserId, $"📎 {fileName} ({FormatSize(fileInfo.Length)})\n업로드 중...")
+        var head = $"📎 {fileName} ({FormatSize(fileInfo.Length)})";
+        var row = new TalkMessageRow(Guid.NewGuid().ToString("N"), _currentUserId, $"{head}\n업로드 중...")
         {
             ServerTs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
         };
 
         AddMessageRow(row);
         ScrollToBottom();
+        // 파일을 읽고 보내기 전에 화면을 한 번 그려서, 고르자마자 "업로드 중..." 말풍선이 보이게 한다.
+        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+
+        var total = Math.Max(1, fileInfo.Length);
+        var progress = new Progress<long>(sent =>
+        {
+            if (row.Status != TalkMessageStatus.Sending) return;
+            var pct = (int)Math.Min(99, sent * 100 / total);
+            row.Text = $"{head}\n업로드 중... {pct}%";
+        });
 
         try
         {
-            var ack = await _client.UploadFileAsync(filePath, targetUserId, ct: CancellationToken.None, roomId: roomId);
+            var ack = await _client.UploadFileAsync(filePath, targetUserId, ct: CancellationToken.None, roomId: roomId, progress: progress);
             if (ack.Result == FileUploadCompleteAck.Types.Result.Ok)
             {
-                row.Text = $"📎 {fileName} ({FormatSize(fileInfo.Length)}) 전송 완료";
                 row.Status = TalkMessageStatus.Delivered;
+                row.Text = $"{head}\n전송 완료";
                 row.ServerTalkId = ack.UploadId;
                 row.AttachmentUploadId = ack.UploadId;
                 if (roomId.Length > 0) _seenRoomMsgIds.Add(ack.UploadId);
                 RefreshReadLabels();
+                // 대화 목록 미리보기도 마지막 파일 메시지로 갱신("[파일] 이름").
+                MessageSentLocally?.Invoke(row.Text, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             }
             else
             {
@@ -1466,7 +1471,8 @@ public partial class TalkWindow : Window
                 ServerTalkId = e.UploadId,
                 FromUserId = e.FromUserId,
                 ToUserId = _currentUserId,
-                Text = $"📎 {e.Filename} ({FormatSize(e.TotalSize)}) [다운로드하려면 더블클릭]",
+                // 안내 문구는 둘째 줄에 따로 — 한 줄에 붙이면 괄호 중간에서 줄이 바뀌었다.
+                Text = $"📎 {e.Filename} ({FormatSize(e.TotalSize)})\n더블클릭하여 다운로드",
                 ServerTs = e.ServerTs,
             };
 
@@ -1555,19 +1561,20 @@ public partial class TalkWindow : Window
         return ext is ".jpg" or ".jpeg" or ".png" or ".gif" or ".webp" or ".bmp";
     }
 
+    // 숫자와 단위 사이는 줄바꿈 없는 공백(U+00A0) — 긴 파일명 뒤에서 "(41 / B)"처럼 괄호 안이 끊기지 않게.
     private static string FormatSize(long bytes)
     {
         if (bytes < 1024)
         {
-            return $"{bytes} B";
+            return $"{bytes} B";
         }
 
         if (bytes < 1024 * 1024)
         {
-            return $"{bytes / 1024.0:F1} KB";
+            return $"{bytes / 1024.0:F1} KB";
         }
 
-        return $"{bytes / (1024.0 * 1024.0):F2} MB";
+        return $"{bytes / (1024.0 * 1024.0):F2} MB";
     }
 
     private void AttachmentCancelButton_OnClick(object sender, RoutedEventArgs e)

@@ -29,12 +29,14 @@ public partial class MessageComposeWindow : Window
         UpdateRecipientHint();
         // 받는 사람이 비어 있으면 받는 사람 칸부터, 있으면 제목부터.
         Loaded += (_, _) => { if (_chips.Count == 0) RecipientsBox.Focus(); else TitleBox.Focus(); };
+        Loaded += (_, _) => CaptureInitialContent();
         // 키보드 단축키: Esc=취소, Ctrl+Enter=보내기
         PreviewKeyDown += (_, e) =>
         {
             if (e.Key == Key.Escape)
             {
-                DialogResult = false; Close(); e.Handled = true;
+                e.Handled = true;
+                CancelWithConfirm();
             }
             else if (e.Key == Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
             {
@@ -203,14 +205,35 @@ public partial class MessageComposeWindow : Window
         Loaded += (_, _) => { BodyBox.Focus(); BodyBox.CaretIndex = 0; };
     }
 
-    private void CloseButton_OnClick(object sender, RoutedEventArgs e)
+    private void CloseButton_OnClick(object sender, RoutedEventArgs e) => CancelWithConfirm();
+
+    private void CancelButton_OnClick(object sender, RoutedEventArgs e) => CancelWithConfirm();
+
+    // 창이 뜬 시점(답장·전달 미리 채움 포함)의 제목/본문 — 이후 바뀐 게 있을 때만 닫기 전에 묻는다.
+    private string _initialTitle = "";
+    private string _initialBody = "";
+
+    private void CaptureInitialContent()
     {
-        DialogResult = false;
-        Close();
+        _initialTitle = TitleBox.Text ?? "";
+        _initialBody = BodyBox.Text ?? "";
     }
 
-    private void CancelButton_OnClick(object sender, RoutedEventArgs e)
+    /// <summary>작성한 내용이나 첨부가 있는지(창을 연 뒤 바뀐 것 기준).</summary>
+    private bool HasUnsavedContent =>
+        _attachmentPath is not null
+        || (TitleBox.Text ?? "") != _initialTitle
+        || (BodyBox.Text ?? "") != _initialBody;
+
+    /// <summary>취소·닫기·Esc 공통: 작성 중인 내용/첨부가 있으면 확인 후 닫는다.</summary>
+    private void CancelWithConfirm()
     {
+        if (HasUnsavedContent
+            && !AppDialog.Confirm(this, "작성 중인 쪽지를 닫을까요?", "쪽지 작성 취소", yes: "닫기", no: "계속 작성",
+                detail: "입력한 내용과 첨부는 저장되지 않습니다."))
+        {
+            return;
+        }
         DialogResult = false;
         Close();
     }

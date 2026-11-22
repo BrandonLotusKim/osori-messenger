@@ -166,6 +166,7 @@ public partial class MainWindow : Window
             {
                 var name = ResolveRoomDisplayName(item.Name, item.NameIsCustom, item.MemberIds, _currentUserId, item.RoomId);
                 var row = GetOrCreateTalkRow(item.RoomId, name, isRoom: true);
+                row.DirectPeerId = RoomPeers.TryGetDirectCounterpart(item.MemberIds, _currentUserId);
                 if (item.LastMessageTs > 0)
                 {
                     row.LastMessagePreview = item.LastMessageText ?? string.Empty;
@@ -234,7 +235,8 @@ public partial class MainWindow : Window
                 && e.AffectedUserIds.Contains(_currentUserId, StringComparer.OrdinalIgnoreCase)
                 && !_conversationByKey.ContainsKey(e.RoomId))
             {
-                GetOrCreateTalkRow(e.RoomId, name, isRoom: true);
+                var newRow = GetOrCreateTalkRow(e.RoomId, name, isRoom: true);
+                newRow.DirectPeerId = RoomPeers.TryGetDirectCounterpart(e.MemberIds, _currentUserId);
                 App.ShowInAppToast("새 대화방", $"'{name}' 대화방에 초대되었습니다", App.ToastLevel.Info);
                 return;
             }
@@ -245,6 +247,7 @@ public partial class MainWindow : Window
             if (_conversationByKey.TryGetValue(e.RoomId, out var row))
             {
                 row.DisplayName = name;
+                row.DirectPeerId = RoomPeers.TryGetDirectCounterpart(e.MemberIds, _currentUserId);
             }
 
             // 2026-09-17 — 3명 이상 방에서 누가 나갔는데 그 방 창을 안 열어놓고 있으면 지금까지
@@ -293,8 +296,7 @@ public partial class MainWindow : Window
             var isFromOther = !string.Equals(e.Message.FromUserId, _currentUserId, StringComparison.OrdinalIgnoreCase);
             if (!isOpenAndActive && isFromOther)
             {
-                row.UnreadCount++;
-                App.UpdateTrayUnreadCount(_conversations.Sum(c => c.UnreadCount));
+                row.UnreadCount++; // 탭 배지·트레이 합계는 RefreshTalkUnreadTotal 이 갱신
 
                 // NotifyDirectMessages 토글로 게이팅
                 if (_settings.Current.NotifyDirectMessages)
@@ -335,8 +337,7 @@ public partial class MainWindow : Window
             var isOpenAndActive = _openTalks.TryGetValue(e.RoomId, out var win) && win.IsActive;
             if (!isOpenAndActive)
             {
-                row.UnreadCount++;
-                App.UpdateTrayUnreadCount(_conversations.Sum(c => c.UnreadCount));
+                row.UnreadCount++; // 탭 배지·트레이 합계는 RefreshTalkUnreadTotal 이 갱신
 
                 if (_settings.Current.NotifyDirectMessages)
                 {
@@ -379,6 +380,7 @@ public partial class MainWindow : Window
             return existing;
         }
         var row = new TalkRow(key, displayName, isRoom, isRoom ? key : null);
+        row.PropertyChanged += TalkRow_OnPropertyChanged;
         _conversationByKey[key] = row;
         _conversations.Insert(0, row);
         return row;
@@ -624,6 +626,7 @@ public partial class MainWindow : Window
         {
             if (existing.WindowState == WindowState.Minimized) existing.WindowState = WindowState.Normal;
             existing.Activate();
+            ClearTalkUnread(key);
             return;
         }
         var win = new TalkWindow(_client, _currentUserId, key, mode, displayName, _orgRoots)
@@ -631,8 +634,11 @@ public partial class MainWindow : Window
             Owner = null,  // 독립 창
         };
         win.Closed += (_, _) => _openTalks.Remove(key);
+        // 창이 열린 채 비활성일 때 온 메시지는 목록에 안 읽음으로 쌓인다. 그 창을 다시 활성화하면
+        // 대화창은 서버에 읽음을 보고하므로 목록 숫자도 함께 지운다(예전엔 남아 있었다).
+        win.Activated += (_, _) => ClearTalkUnread(key);
         // 서버는 발신자 본인에게 TalkReceived 를 다시 push 하지 않아서, 내가 보낸 메시지는
-        // 이 이벤트 없이는 대화 목록 미리보기가 갱신될 방법이 없었다 (x 버그 수정).
+        // 이 이벤트 없이는 대화 목록 미리보기가 갱신될 방법이 없었다.
         win.MessageSentLocally += (text, ts) =>
         {
             var row = GetOrCreateTalkRow(key, displayName, isRoom: mode == TalkWindow.Mode.Room);
@@ -644,8 +650,9 @@ public partial class MainWindow : Window
         win.RoomLeft += roomId => RemoveTalkRow(roomId);
         _openTalks[key] = win;
 
-        // 대화 목록에 없으면 추가
+        // 대화 목록에 없으면 추가. 어느 경로(목록·조직도·검색)로 열든 연 순간 읽은 것으로 본다.
         GetOrCreateTalkRow(key, displayName, isRoom: mode == TalkWindow.Mode.Room);
+        ClearTalkUnread(key);
 
         // 저장된 위치가 없는 첫 오픈이면 MainWindow 옆으로 배치한다. 안 그러면 대화창도
         // MainWindow 도 화면 중앙에 뜨려고 해서 완전히 겹쳐버려, 조직도가 대화창에 가려져
@@ -1059,6 +1066,10 @@ public partial class MainWindow : Window
         }
 
         OpenTalk(ack.RoomId, roomName, TalkWindow.Mode.Room);
+        if (targets.Count == 1 && _conversationByKey.TryGetValue(ack.RoomId, out var created))
+        {
+            created.DirectPeerId = targets[0];
+        }
     }
 
     /// <summary>
@@ -1066,16 +1077,8 @@ public partial class MainWindow : Window
     /// "첫 번째 아이디 외 N명" (쪽지 보낸함에서 이미 쓰는 표기법과 동일). 나중에 메뉴에서 수동 변경 가능.
     /// </summary>
     internal static string ComputeAutoRoomName(IReadOnlyList<string> otherMemberIds)
-    {
-        if (otherMemberIds.Count == 0) return "나와의 대화";
-        if (otherMemberIds.Count <= 3) return string.Join(", ", otherMemberIds);
-        // 2026-09-17 버그 수정: "외 N명"의 N은 "이름이 표시된 한 명을 뺀 나머지 전원"이어야 한다
-        // (나(생성자)까지 포함해서). otherMemberIds 는 이미 나를 뺀 목록이라, 총 인원은
-        // otherMemberIds.Count + 1(나) 이고 거기서 이름이 표시된 1명을 빼면 정확히
-        // otherMemberIds.Count 다 — 예전엔 여기서 한 번 더 -1 을 해서 실제보다 1명 적게 표시됐다
-        // (전체 8명이면 "외 7명"이어야 하는데 "외 6명"으로 나옴).
-        return $"{otherMemberIds[0]} 외 {otherMemberIds.Count}명";
-    }
+        // 규칙은 Core 로 옮김: 아이디 오름차순 정렬로 목록·대화창·검색 결과가 같은 이름을 보인다.
+        => RoomNaming.AutoName(otherMemberIds);
 
     /// <summary>
     /// 2026-09-17 버그 수정 — 서버는 자동 명명된 방 이름을 "방장 기준"으로 딱 한 번 계산해서
@@ -1089,18 +1092,7 @@ public partial class MainWindow : Window
         IEnumerable<string> memberIds,
         string currentUserId,
         string fallbackKey)
-    {
-        if (nameIsCustom) return string.IsNullOrWhiteSpace(serverName) ? fallbackKey : serverName;
-        var others = memberIds
-            .Where(id => !string.Equals(id, currentUserId, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        if (others.Count == 0)
-        {
-            // member_ids 가 비어있으면(구버전 서버 등) 서버가 준 이름으로 폴백.
-            return string.IsNullOrWhiteSpace(serverName) ? fallbackKey : serverName;
-        }
-        return ComputeAutoRoomName(others);
-    }
+        => RoomNaming.Resolve(serverName, nameIsCustom, memberIds, currentUserId, fallbackKey);
 
     private enum DuplicateRoomChoice { Move, CreateNew, Cancel }
 
@@ -1129,7 +1121,30 @@ public partial class MainWindow : Window
         {
             _conversationByKey.Remove(key);
             _conversations.Remove(row);
+            row.PropertyChanged -= TalkRow_OnPropertyChanged;
+            RefreshTalkUnreadTotal();
         }
+    }
+
+    private void TalkRow_OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(TalkRow.UnreadCount)) RefreshTalkUnreadTotal();
+    }
+
+    /// <summary>안 읽은 대화 합계 → 왼쪽 대화 탭 아이콘 배지(쪽지 배지와 같은 모양)와 트레이 표시.</summary>
+    private void RefreshTalkUnreadTotal()
+    {
+        var total = _conversations.Sum(c => c.UnreadCount);
+        TalkTabBadge.Visibility = total > 0 ? Visibility.Visible : Visibility.Collapsed;
+        TalkTabBadgeText.Text = total > 99 ? "99+" : total.ToString();
+        System.Windows.Automation.AutomationProperties.SetName(TabTalk, total > 0 ? $"대화, 안 읽음 {total}개" : "대화");
+        App.UpdateTrayUnreadCount(total);
+    }
+
+    /// <summary>대화창을 열거나 그 창이 활성화되면(= 읽음 보고 시점) 목록의 안 읽음 숫자를 지운다.</summary>
+    private void ClearTalkUnread(string key)
+    {
+        if (_conversationByKey.TryGetValue(key, out var row)) row.UnreadCount = 0;
     }
 
     // ───── 설정 탭 (Phase C-9) ─────
@@ -1740,6 +1755,9 @@ public sealed class MessageRowVm : System.ComponentModel.INotifyPropertyChanged
     public bool IsSentBox { get; init; }
     public bool HasAttachment { get; init; }
     public string AttachmentUploadId { get; init; } = "";
+    /// <summary>첨부 파일 이름·크기(서버가 알려 준 경우).</summary>
+    public string AttachmentFilename { get; init; } = "";
+    public long AttachmentSize { get; init; }
     public Visibility AttachmentVisibility => HasAttachment ? Visibility.Visible : Visibility.Collapsed;
 
     /// <summary>답장/전체회신/전달용 원본 ID. 발신자(보낸사람).</summary>
@@ -1788,6 +1806,8 @@ public sealed class MessageRowVm : System.ComponentModel.INotifyPropertyChanged
             IsSentBox = sentBox,
             HasAttachment = e.HasAttachment,
             AttachmentUploadId = e.AttachmentUploadId,
+            AttachmentFilename = e.AttachmentFilename,
+            AttachmentSize = e.AttachmentSize,
             FromUserId = e.FromUserId,
             RecipientIds = e.RecipientIds.ToList(),
             _isRead = sentBox || e.ReadAt > 0,
@@ -1807,14 +1827,14 @@ public sealed class MessageRowVm : System.ComponentModel.INotifyPropertyChanged
         RecipientIds = new List<string> { myUserId },
         HasAttachment = !string.IsNullOrEmpty(e.AttachmentUploadId),
         AttachmentUploadId = e.AttachmentUploadId,
+        AttachmentFilename = e.AttachmentFilename,
+        AttachmentSize = e.AttachmentSize,
         _isRead = false,
     };
 
     private static string FormatSentAt(long ms)
     {
-        if (ms <= 0) return "";
-        var dto = DateTimeOffset.FromUnixTimeMilliseconds(ms).ToLocalTime();
-        var today = DateTimeOffset.Now.Date;
-        return dto.Date == today ? dto.ToString("HH:mm") : dto.ToString("MM/dd");
+        // 대화 목록과 같은 규칙: 오늘 HH:mm / 올해 MM-dd / 그 전 yyyy-MM-dd
+        return OsoriClient.Core.TalkListFormat.ListTime(ms);
     }
 }
