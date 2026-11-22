@@ -204,6 +204,7 @@ jobs:
           OSORI_DB_USER: osori
           OSORI_DB_PASS: osori_dev_pw
           OSORI_AUTH_MODE: OPEN
+          OSORI_ALLOWED_ACCOUNTS: "*"
         run: |
           ./build/install/osori-server/bin/osori-server > /tmp/server.log 2>&1 &
           echo $! > /tmp/server.pid

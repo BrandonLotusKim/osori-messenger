@@ -13,4 +13,16 @@ package com.osori.server.auth
 object AllowedAccounts {
     val IDS: Set<String> = (setOf("admin") + (1..10).map { "test$it" })
         .also { require(it.size == 11) }
+
+    /**
+     * 로그인 허용 여부.
+     * 환경변수 OSORI_ALLOWED_ACCOUNTS: 비어 있으면 기본 목록([IDS]), "*" 이면 검사하지 않음(자동 테스트용),
+     * 쉼표로 구분한 목록이면 그 계정만 허용.
+     */
+    fun isAllowed(userId: String, setting: String? = System.getenv("OSORI_ALLOWED_ACCOUNTS")): Boolean {
+        val s = setting?.trim()
+        if (s.isNullOrEmpty()) return userId in IDS
+        if (s == "*") return true
+        return userId in s.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+    }
 }

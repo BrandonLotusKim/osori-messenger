@@ -5,14 +5,14 @@
 #   2. eclipse-temurin:17-jre 슬림 베이스에 jar 만 복사 (이미지 크기 절약)
 
 FROM eclipse-temurin:17-jdk AS builder
-WORKDIR /build
+WORKDIR /build/server
 
 # Gradle wrapper + 의존성 캐시를 위해 빌드 스크립트만 먼저 복사
 COPY server/gradlew server/gradlew.bat ./
 COPY server/gradle ./gradle
 COPY server/build.gradle.kts server/settings.gradle.kts ./
 # proto 도 빌드에 필요
-COPY proto ./proto
+COPY proto ../proto
 
 RUN chmod +x ./gradlew \
     && ./gradlew --no-daemon dependencies > /dev/null 2>&1 || true
@@ -35,7 +35,7 @@ RUN groupadd --system osori && useradd --system --gid osori --create-home osori
 WORKDIR /app
 
 # installDist 산출물 일괄 복사 (bin/ + lib/)
-COPY --from=builder /build/build/install/osori-server /app
+COPY --from=builder /build/server/build/install/osori-server /app
 
 # 로그/업로드/keystore 볼륨 마운트 포인트
 RUN mkdir -p /app/logs /app/storage /app/certs \

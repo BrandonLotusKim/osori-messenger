@@ -76,7 +76,7 @@ class LoginHandler(
         // 화이트리스트 게이트 (2026-09-15 사용자 요구사항): admin/test1~10 외 계정은
         // 존재 여부와 무관하게 즉시 거부. repo.ensureExists 보다 먼저 체크해서
         // 목록 밖 userId 로는 계정 자동 생성조차 안 되도록 한다.
-        if (req.userId !in AllowedAccounts.IDS) {
+        if (!AllowedAccounts.isAllowed(req.userId)) {
             logger.info("허용되지 않은 계정 로그인 시도 userId={}", req.userId)
             auditRepository?.recordLoginFailed(userId = req.userId, reason = "not in allow-list")
             pluginRegistry?.fireLogin(
