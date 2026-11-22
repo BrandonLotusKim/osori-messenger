@@ -407,10 +407,10 @@ try
 
     // ========================================
     // 8) 메시지 검색 시나리오 (MSG_SEARCH_REQ/RES 풀스택 라우팅 증명)
-    // 이전 시나리오에서 alice↔bob 간 "hello from alice" 가 최소 2건(온라인+오프라인) 적재됨.
+    // 검색은 대화방 메시지 기준. 앞의 방 만들기 시나리오에서 "room hello" 메시지 3건이 적재됨.
     // ========================================
     Console.WriteLine("[smoke] 메시지 검색 시나리오 시작");
-    var searchKeyword = "hello from alice";
+    var searchKeyword = "room hello";
     var searchRes = await alice.SearchMessagesAsync(searchKeyword, limit: 50, ct: overallCts.Token);
     if (searchRes.Result != TalkSearchResponse.Types.Result.Ok)
     {
