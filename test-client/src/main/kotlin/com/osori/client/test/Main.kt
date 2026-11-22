@@ -22,8 +22,8 @@ import javax.net.ssl.X509TrustManager
 //   - --history N          로그인 직후 TalkHistoryRequest sinceTs=0 limit=N 송신 (첫 접속에서만)
 //   - --no-heartbeat       자동 30초 주기 Heartbeat 송신을 끔 (기본은 켬)
 //   - --tls                wss 접속 (자체 서명 인증서 검증 무시)
-//   - --pw PASSWORD        LoginRequest.password 필드에 평문 password 전달 STRICT 모드용, 반드시 wss 와 함께)
-//   - --auto-reconnect     연결이 끊기면 지수 백오프로 자동 재접속, 기본은 끔)
+//   - --pw PASSWORD        LoginRequest.password 필드에 평문 password 전달 (STRICT 모드용, 반드시 wss 와 함께)
+//   - --auto-reconnect     연결이 끊기면 지수 백오프로 자동 재접속 (기본은 끔)
 //   - --max-reconnect N    --auto-reconnect 동반 사용, 최대 재시도 횟수 (기본 10)
 //
 // 예시:
@@ -138,7 +138,7 @@ fun main(args: Array<String>) = runBlocking {
     }
 }
 
-//: 지수 백오프 C# 클라와 동일한 공식).
+//: 지수 백오프 (C# 클라와 동일한 공식).
 // attempt=0 → 1s, 1 → 2s, 2 → 4s, 3 → 8s, 4 → 16s, 5+ → 30s (cap)
 internal fun computeBackoffDelayMs(attempt: Int): Int {
     val capMs = 30_000

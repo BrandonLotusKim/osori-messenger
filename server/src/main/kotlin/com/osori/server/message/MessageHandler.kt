@@ -12,7 +12,7 @@ import java.util.UUID
 private val logger = LoggerFactory.getLogger("com.osori.server.MessageHandler")
 
 /**
- * 쪽지(Memo) 핸들러 —.
+ * 쪽지(Memo) 핸들러 — .
  *
  * 책임:
  *   - MessageSend → 검증 + saveMemo + 온라인 수신자에게 MessageReceived 푸시 + MessageSendAck 응답

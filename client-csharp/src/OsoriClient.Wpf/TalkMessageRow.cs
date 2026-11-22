@@ -145,7 +145,7 @@ public sealed class TalkMessageRow : INotifyPropertyChanged
         ? DateTimeOffset.FromUnixTimeMilliseconds(_serverTs).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
         : string.Empty;
 
-    // ───── OC-D03 말풍선 바인딩용 computed 속성 ─────
+    // ───── 말풍선 바인딩용 computed 속성 ─────
 
     /// <summary>내가 보낸 메시지인지 (Sent 방향) — 말풍선 위치 결정.</summary>
     public bool IsMine => Direction == MessageDirection.Sent;

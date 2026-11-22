@@ -1,6 +1,6 @@
 {
   "annotations": { "list": [] },
-  "description": "오소리 메신저 v0.1 운영 대시보드 —. /metrics scrape 필요 (Prometheus job=osori).",
+  "description": "오소리 메신저 v0.1 운영 대시보드 — . /metrics scrape 필요 (Prometheus job=osori).",
   "editable": true,
   "graphTooltip": 1,
   "panels": [

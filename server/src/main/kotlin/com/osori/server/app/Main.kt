@@ -184,7 +184,7 @@ fun main() {
 
     val server = embeddedServer(Netty, env)
 
-    ///411 첨부 보존 + 디스크 알람 — DB 활성 시에만 백그라운드 코루틴 기동
+    // 첨부 보존 + 디스크 알람 — DB 활성 시에만 백그라운드 코루틴 기동
     val storageMaintenance = if (database != null && fileRepository != null) {
         com.osori.server.storage.StorageMaintenance(database, fileStorageRoot).also { it.start() }
     } else null
@@ -285,7 +285,7 @@ fun Application.configureServer(
         sessionReaper.stop()
     }
 
-    ///411 maintenance 는 configureServer 인자로는 database 없음 → main() 에서 별도 기동.
+    // maintenance 는 configureServer 인자로는 database 없음 → main() 에서 별도 기동.
     // 이 자리에는 sampler 만 등록.
 
     // 메트릭 sampler 배선

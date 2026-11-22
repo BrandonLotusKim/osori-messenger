@@ -19,7 +19,7 @@ public sealed class WindowBounds
 /// <summary>
 /// 클라이언트 환경설정 POCO.
 /// 운영 중 사용자가 변경 가능한 모든 옵션을 한 구조체에 모은다.
-/// 최초 설계, OC-D01~D03 재디자인에 맞춰 필드 확장.
+/// 최초 설계, 재디자인에 맞춰 필드 확장.
 /// </summary>
 public sealed class ClientSettings
 {
@@ -36,7 +36,7 @@ public sealed class ClientSettings
     // 없었다(OsoriClientMulti 로 실행하면 마지막 아이디/자동로그인/비밀번호 저장이 전부 깨지는
     // 버그의 원인). 로그인 자격증명은 프로필과 무관하게 항상 같은 파일에 저장해야 한다.
 
-    /// <summary>OC-D01: 최근 로그인한 사용자 ID 목록 (최신순, 최대 5개). ComboBox 드롭다운 소스.</summary>
+    /// <summary>최근 로그인한 사용자 ID 목록 (최신순, 최대 5개). ComboBox 드롭다운 소스.</summary>
     public List<string> RecentUserIds { get; set; } = new();
 
     // ── 신뢰성 ──
@@ -48,20 +48,20 @@ public sealed class ClientSettings
     // ── 알림 ──
     public bool PlaySoundOnMessage { get; set; } = true;
     public bool ShowTrayNotification { get; set; } = true;
-    /// <summary> 채널별 알림 — 1:1 메시지.</summary>
+    /// <summary>채널별 알림 — 1:1 메시지.</summary>
     public bool NotifyDirectMessages { get; set; } = true;
-    /// <summary> 채널별 알림 — 그룹 채팅.</summary>
+    /// <summary>채널별 알림 — 그룹 채팅.</summary>
     public bool NotifyRoomMessages { get; set; } = true;
-    /// <summary> 채널별 알림 — 쪽지.</summary>
+    /// <summary>채널별 알림 — 쪽지.</summary>
     public bool NotifyMessages { get; set; } = true;
-    /// <summary> 채널별 알림 — 파일 도착.</summary>
+    /// <summary>채널별 알림 — 파일 도착.</summary>
     public bool NotifyFiles { get; set; } = true;
 
     // ── 표시 ──
     public int FontSize { get; set; } = 14;
     public string Theme { get; set; } = "light";
 
-    // ── 창 상태 (OC-D02) ──
+    // ── 창 상태 ──
     /// <summary>MainWindow 의 마지막 위치/크기.</summary>
     public WindowBounds? MainWindowBounds { get; set; }
 
@@ -71,7 +71,7 @@ public sealed class ClientSettings
     /// <summary>창 닫기(X) 버튼을 눌렀을 때 트레이로 최소화할지.</summary>
     public bool CloseToTray { get; set; } = true;
 
-    /// <summary>OC-D02: 마지막으로 선택한 MainWindow 탭. "talk" | "org" | "settings". 디폴트=조직도.</summary>
+    /// <summary>마지막으로 선택한 MainWindow 탭. "talk" | "org" | "settings". 디폴트=조직도.</summary>
     public string LastSelectedTab { get; set; } = "org";
 }
 
@@ -85,7 +85,7 @@ public sealed class ClientSettings
 ///   - thread-safe (lock)
 ///   - 로드 실패 시 기본값으로 안전 복구
 ///   - 저장 실패는 호출자로 전파
-///   - OC-D01~D03 재디자인에 맞춰 필드 증분 — 구 JSON 도 기본값으로 역호환
+///   - 재디자인에 맞춰 필드 증분 — 구 JSON 도 기본값으로 역호환
 /// </summary>
 public sealed class SettingsStore
 {
@@ -161,7 +161,7 @@ public sealed class SettingsStore
     }
 
     /// <summary>
-    /// OC-D01: 로그인 성공 시 호출. RecentUserIds 상단으로 이동 + 최대 5개로 트림.
+    ///: 로그인 성공 시 호출. RecentUserIds 상단으로 이동 + 최대 5개로 트림.
     /// (LastUserId 자체는 2026-09-17 부로 LoginCredentialsStore 로 이전됨.)
     /// </summary>
     public void RecordSuccessfulLogin(string userId)

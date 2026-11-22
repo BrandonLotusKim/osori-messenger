@@ -159,7 +159,7 @@ class WebSocketHandlerIntegrationTest {
     }
 
     @Test
-    fun `TalkHistoryRequest 는 빈 TalkHistoryResponse 를 반환한다 (메모리 모드,`() = testApplication {
+    fun `TalkHistoryRequest 는 빈 TalkHistoryResponse 를 반환한다 (메모리 모드, )`() = testApplication {
         //: WebSocketHandler → TalkHistoryHandler 라우팅 풀스택 검증.
         // talkRepository=null 이면 TalkHistoryHandler 는 EMPTY_STORE 를 쓰므로,
         // 요청-응답 envelope 매칭과 has_more=false 만 확인한다.
@@ -217,7 +217,7 @@ class WebSocketHandlerIntegrationTest {
     }
 
     @Test
-    fun `TalkRoomCreate in memory mode returns SERVER_ERROR routing verification)`() = testApplication {
+    fun `TalkRoomCreate in memory mode returns SERVER_ERROR (routing verification)`() = testApplication {
         //: verifies WebSocketHandler → TalkRoomHandler routing end-to-end.
         // In memory mode (no talkRoomRepository) the handler returns SERVER_ERROR,
         // which still proves the payload reached TalkRoomHandler via the new envelope case.
@@ -273,7 +273,7 @@ class WebSocketHandlerIntegrationTest {
     }
 
     @Test
-    fun `로그인 성공 시 PluginRegistry fireLogin 이 호출된다 배선 검증)`() = testApplication {
+    fun `로그인 성공 시 PluginRegistry fireLogin 이 호출된다 (배선 검증)`() = testApplication {
         //: configureServer 에 주입한 PluginRegistry 를 실제 LoginHandler 가 쓰는지 확인.
         // 유닛 테스트는 핸들러 생성자에 registry 를 넘겨도 Main.configureServer 와이어링은 증명 못 함.
         val received = mutableListOf<LoginEvent>()

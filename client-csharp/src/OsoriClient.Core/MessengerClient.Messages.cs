@@ -5,7 +5,7 @@ namespace OsoriClient.Core;
 /// <summary>쪽지(message) 발송/받은쪽지함/보낸쪽지함/읽음 처리/삭제.</summary>
 public sealed partial class MessengerClient
 {
-    /// <summary> 쪽지 발송. 다중 수신자 지원. 첨부파일은 사전 업로드된 upload_id 로 참조.</summary>
+    /// <summary>쪽지 발송. 다중 수신자 지원. 첨부파일은 사전 업로드된 upload_id 로 참조.</summary>
     public async Task<MessageSendAck> SendMessageAsync(
         IEnumerable<string> recipientIds,
         string title,
@@ -28,7 +28,7 @@ public sealed partial class MessengerClient
         return response.MessageSendAck;
     }
 
-    /// <summary> 받은쪽지함 조회. sinceTs > 0 이면 그 이후만, limit 0 이면 서버 기본값(50).</summary>
+    /// <summary>받은쪽지함 조회. sinceTs > 0 이면 그 이후만, limit 0 이면 서버 기본값(50).</summary>
     public async Task<MessageListResponse> GetMessageInboxAsync(
         long sinceTs = 0,
         int limit = 0,
@@ -45,7 +45,7 @@ public sealed partial class MessengerClient
         return response.MessageListRes;
     }
 
-    /// <summary> 보낸쪽지함 조회.</summary>
+    /// <summary>보낸쪽지함 조회.</summary>
     public async Task<MessageListResponse> GetMessageSentAsync(
         long sinceTs = 0,
         int limit = 0,
@@ -62,7 +62,7 @@ public sealed partial class MessengerClient
         return response.MessageListRes;
     }
 
-    /// <summary> 쪽지 읽음 처리. 본인 수신쪽지만 가능.</summary>
+    /// <summary>쪽지 읽음 처리. 본인 수신쪽지만 가능.</summary>
     public async Task<MessageMarkReadAck> MarkMessageReadAsync(
         string serverMessageId,
         CancellationToken ct = default)
@@ -76,7 +76,7 @@ public sealed partial class MessengerClient
         return response.MessageMarkReadAck;
     }
 
-    /// <summary> 쪽지 소프트 삭제. 발신자/수신자 어느 쪽이든 본인 시야에서만 사라짐.</summary>
+    /// <summary>쪽지 소프트 삭제. 발신자/수신자 어느 쪽이든 본인 시야에서만 사라짐.</summary>
     public async Task<MessageDeleteAck> DeleteMessageAsync(
         string serverMessageId,
         CancellationToken ct = default)

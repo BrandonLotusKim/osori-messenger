@@ -8,7 +8,7 @@ import java.nio.file.Path
 import java.time.Duration
 
 /**
- */411 스토리지 유지보수 백그라운드 코루틴.
+ * 스토리지 유지보수 백그라운드 코루틴.
  *
  *  - **첨부 보존**: 매 6시간 마다 `file_uploads.created_at` 이 `retentionDays` 초과한 행을
  *    DB 삭제 + 디스크 파일 unlink. status=open(미완료) 도 같이 정리 (orphan).
@@ -96,7 +96,7 @@ class StorageMaintenance(
         }
         com.osori.server.metrics.Metrics.filesUploaded // touch — counter 는 변하지 않음, 단순 통계
         if (deleted > 0) {
-            logger.info(" 보존 기간 초과 첨부 {} 건 삭제", deleted)
+            logger.info("보존 기간 초과 첨부 {} 건 삭제", deleted)
         }
     }
 

@@ -251,7 +251,7 @@ try
     await charlie.LogoutAsync(overallCts.Token);
 
     // ========================================================================
-    ///c: File upload + download round trip scenario
+    // /c: File upload + download round trip scenario
     // alice uploads a file to bob2, bob2 receives FileAvailablePushed event,
     // bob2 downloads the bytes and verifies they match the original content.
     // ========================================================================
@@ -342,7 +342,7 @@ try
     Console.WriteLine("[smoke] OK — 조직도 snapshot 시나리오 통과");
 
     // ========================================
-    // 7) 방 만들기 + 참여 시나리오, room.created audit 트리거)
+    // 7) 방 만들기 + 참여 시나리오 (room.created audit 트리거)
     // ========================================
     Console.WriteLine("[smoke] 방 만들기 시나리오 시작");
     var roomName = $"smoke-room-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
@@ -366,7 +366,7 @@ try
     Console.WriteLine("[smoke] OK — 방 만들기 시나리오 통과 (메시지 3건 적재)");
 
     // ========================================
-    // 7b) 방 히스토리 시나리오, TalkRoomHistoryRequest/Response 풀스택)
+    // 7b) 방 히스토리 시나리오 (TalkRoomHistoryRequest/Response 풀스택)
     // alice 가 직접 만든 방 → 멤버 → OK + 3건 반환
     // charlie 가 join 안 한 방 → NOT_A_MEMBER
     // ========================================
@@ -406,7 +406,7 @@ try
     Console.WriteLine("[smoke] OK — 방 히스토리 시나리오 통과 (멤버 OK + limit/has_more + 비멤버 거부)");
 
     // ========================================
-    // 8) 메시지 검색 시나리오, MSG_SEARCH_REQ/RES 풀스택 라우팅 증명)
+    // 8) 메시지 검색 시나리오 (MSG_SEARCH_REQ/RES 풀스택 라우팅 증명)
     // 이전 시나리오에서 alice↔bob 간 "hello from alice" 가 최소 2건(온라인+오프라인) 적재됨.
     // ========================================
     Console.WriteLine("[smoke] 메시지 검색 시나리오 시작");

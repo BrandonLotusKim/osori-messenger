@@ -152,7 +152,7 @@ public sealed partial class MessengerClient
         return response.TalkRoomSendAck;
     }
 
-    /// <summary> 방 히스토리 조회. roomId 의 멤버만 호출 가능 (서버가 NOT_A_MEMBER 로 거부).</summary>
+    /// <summary>방 히스토리 조회. roomId 의 멤버만 호출 가능 (서버가 NOT_A_MEMBER 로 거부).</summary>
     public async Task<TalkRoomHistoryResponse> GetRoomHistoryAsync(
         string roomId,
         long sinceMillis = 0,

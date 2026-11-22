@@ -3,7 +3,7 @@
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
 
     <!-- ═══════════════════════════════════════════════════════════
-         오소리 메신저 디자인 토큰 (OC-D01/D02/D03 공용)
+         오소리 메신저 디자인 토큰 (공용)
          ═══════════════════════════════════════════════════════════ -->
 
     <!-- ─── 브랜드/기본 (다크 + 노랑 포인트) ─── -->
@@ -511,7 +511,7 @@
     </Style>
 
     <!-- ═══════════════════════════════════════════════════════════
- 보강: 그림자 / 추가 색상 / 아바타 팔레트 / 간격 / 두께
+         보강: 그림자 / 추가 색상 / 아바타 팔레트 / 간격 / 두께
          (디자인 스펙 01_login_design / 02_main_design / 03_conversation_design 의
           누락분을 통합하여 모든 윈도우가 동일 토큰을 참조하게 함)
          ═══════════════════════════════════════════════════════════ -->
@@ -540,7 +540,7 @@
     <SolidColorBrush x:Key="SidebarAccentBrush"     Color="{StaticResource SidebarAccent}" />
     <SolidColorBrush x:Key="DangerBorderBrush"      Color="{StaticResource DangerBorder}" />
 
-    <!-- ─── 발신자 아바타 8색 해시 팔레트 (OC-D03 §10) ───
+    <!-- ─── 발신자 아바타 8색 해시 팔레트 (§10) ───
          사용자 ID 를 SHA1 → 첫 바이트 mod 8 → 이 인덱스 사용 -->
     <Color x:Key="AvatarPalette0">#FFE57373</Color>
     <Color x:Key="AvatarPalette1">#FFBA68C8</Color>
@@ -586,7 +586,7 @@
     <FontWeight x:Key="WeightBold">Bold</FontWeight>
 
     <!-- ═══════════════════════════════════════════════════════════
- 글로벌 컨트롤 스타일 — CheckBox / ListBox / ListBoxItem
+         글로벌 컨트롤 스타일 — CheckBox / ListBox / ListBoxItem
          ═══════════════════════════════════════════════════════════ -->
 
     <!-- AppCheckBox: 브랜드 색 체크 표시, 13pt 라벨 -->
@@ -685,7 +685,7 @@
         <Setter Property="ItemContainerStyle" Value="{StaticResource AppListBoxItem}" />
     </Style>
 
-    <!-- 약식: ComboBox 색상/폰트만 통일. 풀 ControlTemplate 은(LoginWindow 재설계) 시점에 작성 -->
+    <!-- 약식: ComboBox 색상/폰트만 통일. 풀 ControlTemplate 은 (LoginWindow 재설계) 시점에 작성 -->
     <Style x:Key="AppComboBox" TargetType="ComboBox">
         <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
         <Setter Property="FontSize" Value="{StaticResource FontBody}" />

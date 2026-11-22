@@ -6,7 +6,7 @@ using System.Text;
 namespace OsoriClient.Wpf.Security;
 
 /// <summary>
-/// DPAPI 래퍼 — 자동로그인 비밀번호를 현재 Windows 사용자 계정 scope 로 암호화/복호화한다 (OC-D01).
+/// DPAPI 래퍼 — 자동로그인 비밀번호를 현재 Windows 사용자 계정 scope 로 암호화/복호화한다.
 ///
 /// 보안 모델:
 ///   - DPAPI 는 같은 Windows 사용자 계정에서만 복호화 가능 — 다른 계정/PC 이동 시 복호화 실패.

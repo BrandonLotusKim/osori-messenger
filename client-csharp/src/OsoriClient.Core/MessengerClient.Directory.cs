@@ -52,7 +52,7 @@ public sealed partial class MessengerClient
         return response.TalkSearchRes;
     }
 
-    /// <summary> 푸시 토큰 등록. 같은 device 로 재호출 시 upsert 로 토큰 회전.</summary>
+    /// <summary>푸시 토큰 등록. 같은 device 로 재호출 시 upsert 로 토큰 회전.</summary>
     public async Task<PushTokenRegisterResponse> RegisterPushTokenAsync(
         string deviceId,
         string platform,
@@ -73,7 +73,7 @@ public sealed partial class MessengerClient
         return response.PushTokenRegisterRes;
     }
 
-    /// <summary> 푸시 토큰 해제. 로그아웃/앱삭제 시.</summary>
+    /// <summary>푸시 토큰 해제. 로그아웃/앱삭제 시.</summary>
     public async Task<PushTokenUnregisterResponse> UnregisterPushTokenAsync(
         string deviceId,
         CancellationToken ct = default)

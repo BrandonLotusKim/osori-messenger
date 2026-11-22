@@ -1,4 +1,4 @@
-# LoginWindow 디자인 스펙 (OC-D01)
+# LoginWindow 디자인 스펙
 
 > 오소리 메신저 WPF 클라이언트의 로그인 창 재설계 스펙.
 > 현 MVP(`LoginWindow.xaml`) 는 기능은 있으나 시각 정보 구조/상태 피드백이 부족 → 재설계.

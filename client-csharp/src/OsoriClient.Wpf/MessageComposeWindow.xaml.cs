@@ -191,7 +191,7 @@ public partial class MessageComposeWindow : Window
         SetChips(userIds);
     }
 
-    /// <summary>OC-D04 — 답장/전체회신/전달 시 MainWindow 가 호출. 수신자/제목/인용본문을 미리 채운다.</summary>
+    /// <summary>답장/전체회신/전달 시 MainWindow 가 호출. 수신자/제목/인용본문을 미리 채운다.</summary>
     public void SetPrefill(System.Collections.Generic.IEnumerable<string> recipients, string title, string? quotedBody)
     {
         SetChips(recipients);

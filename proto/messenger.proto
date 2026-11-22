@@ -46,14 +46,14 @@ message Envelope {
     Heartbeat        heartbeat      = 99;
     HeartbeatAck     heartbeat_ack  = 98;
 
-    // 프레즌스 이후)
+    // 프레즌스 (이후)
     PresenceEvent    presence_event = 30;
 
-    // 대화(1:1) 히스토리 동기화 이후)
+    // 대화(1:1) 히스토리 동기화 (이후)
     TalkHistoryRequest   talk_history_req = 40;
     TalkHistoryResponse  talk_history_res = 41;
 
-    // 대화(그룹), Phase 6)
+    // 대화(그룹) (Phase 6)
     TalkRoomCreate          talk_room_create     = 50;
     TalkRoomCreateAck       talk_room_create_ack = 51;
     TalkRoomJoin            talk_room_join       = 52;
@@ -62,7 +62,7 @@ message Envelope {
     TalkRoomSendAck         talk_room_send_ack   = 55;
     TalkRoomReceived        talk_room_received   = 56;
 
-    // File transfer, Phase 6)
+    // File transfer (Phase 6)
     FileUploadStart          file_upload_start     = 60;
     FileUploadStartAck       file_upload_start_ack = 61;
     FileUploadChunk          file_upload_chunk     = 62;
@@ -93,7 +93,7 @@ message Envelope {
     PushTokenUnregisterRequest  push_token_unregister_req  = 102;
     PushTokenUnregisterResponse push_token_unregister_res  = 103;
 
-    // 쪽지, 비대화형 1:N 공지성, 오프라인 누적 후 다음 로그인 시 전달)
+    // 쪽지 (비대화형 1:N 공지성, 오프라인 누적 후 다음 로그인 시 전달)
     MessageSend          message_send           = 110;
     MessageSendAck       message_send_ack       = 111;
     MessageReceived      message_received       = 112;
@@ -261,7 +261,7 @@ message TalkHistoryResponse {
 
 
 // ============================================================================
-// 대화(그룹) (Phase 6,
+// 대화(그룹) (Phase 6, )
 // ============================================================================
 
 message TalkRoomCreate {
@@ -503,7 +503,7 @@ message TalkRoomRenamed {
 
 
 // ============================================================================
-// File transfer (Phase 6,
+// File transfer (Phase 6, )
 // ============================================================================
 
 message FileUploadStart {

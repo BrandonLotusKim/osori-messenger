@@ -420,7 +420,7 @@ public partial class TalkWindow : Window
 
     private TalkMessageRow BuildHistoryRow(TalkReceived msg)
     {
-        //x 버그 수정: 예전엔 본인이 보낸 메시지는 실제 배달 여부와 무관하게
+        // x 버그 수정: 예전엔 본인이 보낸 메시지는 실제 배달 여부와 무관하게
         // 무조건 Delivered(✓)로 하드코딩했음 — 상대가 계속 오프라인이라 아직도
         // 아웃박스에 대기 중이어도 창을 닫았다 열면 체크로 잘못 표시됐다.
         // 서버가 history 응답에 실어주는 msg.Delivered(outbox 미배달 여부 기반)를 반영.

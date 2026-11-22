@@ -92,7 +92,7 @@
             </StackPanel>
         </Border>
 
-        <!-- 첨부파일 칩 (OC-D04) -->
+        <!-- 첨부파일 칩 -->
         <Border Grid.Row="2" x:Name="AttachmentChip"
                 Padding="16,10"
                 Background="{StaticResource AttachmentPreviewBgBrush}"
@@ -150,7 +150,7 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <!-- 답장 / 전체회신 / 전달 (OC-D04, 우클릭 아님 — 상세창 액션바에 상시 노출) -->
+                <!-- 답장 / 전체회신 / 전달 (우클릭 아님 — 상세창 액션바에 상시 노출) -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal">
                     <Button x:Name="ReplyButton" Style="{StaticResource FlatIconButton}"
                             Width="32" Height="32" ToolTip="답장"

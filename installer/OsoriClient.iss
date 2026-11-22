@@ -1,4 +1,4 @@
-; 오소리 메신저 클라이언트 인스톨러 —/241/242
+; 오소리 메신저 클라이언트 인스톨러 —
 ;
 ; 빌드 사전조건:
 ;   1. dotnet publish 결과물이 `..\client-csharp\src\OsoriClient.Wpf\bin\Release\net8.0-windows\publish\` 에 있어야 함

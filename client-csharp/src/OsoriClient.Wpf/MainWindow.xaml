@@ -119,7 +119,7 @@
                                            UnitTemplate="{StaticResource OrgUnitTemplate}"
                                            MemberTemplate="{StaticResource OrgMemberTemplate}" />
 
-        <!-- ════════ 대화 리스트 아이템 템플릿 (OC-D02 §3.4) ════════ -->
+        <!-- ════════ 대화 리스트 아이템 템플릿 (§3.4) ════════ -->
         <DataTemplate x:Key="TalkRowTemplate">
             <Border Padding="10,10" BorderThickness="0,0,0,1" BorderBrush="{StaticResource BorderBrush}">
                 <Grid>
@@ -653,7 +653,7 @@
 
             <!-- 탭 컨텐츠 (Visibility 토글) -->
             <Grid Grid.Column="1">
-                <!-- 💬 대화 탭 (OC-D02 §3.4) -->
+                <!-- 💬 대화 탭 (§3.4) -->
                 <Grid x:Name="TalkTabContent" Visibility="Collapsed">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -748,7 +748,7 @@
                     </Grid>
                 </Grid>
 
-                <!-- 🏢 조직도 탭 (OC-D02 §3.5) -->
+                <!-- 🏢 조직도 탭 (§3.5) -->
                 <Grid x:Name="OrgTabContent" Visibility="Visible">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -1021,7 +1021,7 @@
                     </Grid>
                 </Grid>
 
-                <!-- ⚙ 설정 탭 (OC-D02 §3.6) -->
+                <!-- ⚙ 설정 탭 (§3.6) -->
                 <Grid x:Name="SettingsTabContent" Visibility="Collapsed">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />

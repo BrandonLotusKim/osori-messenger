@@ -7,7 +7,7 @@ import java.time.Instant
 private val logger = LoggerFactory.getLogger("com.osori.server.MessageRepository")
 
 /**
- * 쪽지(Memo) Repository —/222.
+ * 쪽지(Memo) Repository — .
  *
  * 모델:
  *   - memos          : 본문 1행 (server_message_id PK, from_user, title, body, sent_at, attachment_upload_id, deleted_at_by_sender)

@@ -165,7 +165,7 @@ public partial class LoginWindow : Window
         }
     }
 
-    /// <summary>: 검증 실패 필드에 빨간 테두리 + 두께 2 인라인 에러 표시.</summary>
+    /// <summary>검증 실패 필드에 빨간 테두리 + 두께 2 인라인 에러 표시.</summary>
     private void SetFieldInvalid(Control c)
     {
         c.BorderBrush = (Brush)FindResource("ErrorBrush");

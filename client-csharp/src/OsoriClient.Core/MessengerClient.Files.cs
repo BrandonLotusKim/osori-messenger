@@ -7,7 +7,7 @@ namespace OsoriClient.Core;
 /// <summary>파일 업로드(청크 분할 전송)/다운로드(진행률 콜백 포함).</summary>
 public sealed partial class MessengerClient
 {
-    /// <summary> 진행률 콜백 인자. bytesReceived/totalBytes (총 0이면 알 수 없음).</summary>
+    /// <summary>진행률 콜백 인자. bytesReceived/totalBytes (총 0이면 알 수 없음).</summary>
     public sealed record DownloadProgress(string UploadId, long BytesReceived, long TotalBytes)
     {
         public double Fraction => TotalBytes > 0 ? (double)BytesReceived / TotalBytes : 0.0;

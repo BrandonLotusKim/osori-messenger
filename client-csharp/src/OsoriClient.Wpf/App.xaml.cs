@@ -10,11 +10,11 @@ namespace OsoriClient.Wpf;
 
 public partial class App : Application
 {
-    /// <summary>: 다중 인스턴스 차단용 Mutex. 사용자 단위로 하나의 클라이언트만 실행.</summary>
+    /// <summary>다중 인스턴스 차단용 Mutex. 사용자 단위로 하나의 클라이언트만 실행.</summary>
     private const string SingleInstanceMutexName = @"Global\OsoriMessenger.WpfClient.SingleInstance";
     private Mutex? _singleInstanceMutex;
 
-    /// <summary>/180: 시스템 트레이 아이콘 (WinForms NotifyIcon).</summary>
+    /// <summary>시스템 트레이 아이콘 (WinForms NotifyIcon).</summary>
     private WinForms.NotifyIcon? _trayIcon;
 
     /// <summary>다른 컴포넌트가 공유하는 SettingsStore. App 수명 동안 단일.</summary>
@@ -460,7 +460,7 @@ public partial class App : Application
         Current?.Shutdown();
     }
 
-    /// <summary> 인앱 토스트 레벨.</summary>
+    /// <summary>인앱 토스트 레벨.</summary>
     public enum ToastLevel { Info, Success, Warn, Error }
 
     /// <summary>
@@ -481,7 +481,7 @@ public partial class App : Application
     }
 
     /// <summary>
-    ////182: 시스템 트레이 풍선 알림(Win 10 이상 자동 토스트 변환).
+    ///: 시스템 트레이 풍선 알림(Win 10 이상 자동 토스트 변환).
     /// 호출자가 IsActive 등 활성 창 여부를 미리 판단해 호출.
     /// </summary>
     public static void ShowToast(string title, string body, int durationMs = 3000)
@@ -500,7 +500,7 @@ public partial class App : Application
         }
     }
 
-    /// <summary>/129b: 미읽음 카운트를 트레이 ToolTip 에 반영 + 아이콘 빨간점 + 카운트 오버레이.</summary>
+    /// <summary>미읽음 카운트를 트레이 ToolTip 에 반영 + 아이콘 빨간점 + 카운트 오버레이.</summary>
     public static void UpdateTrayUnreadCount(int unread)
     {
         if (Current is not App app || app._trayIcon is null)

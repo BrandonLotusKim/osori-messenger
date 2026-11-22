@@ -105,7 +105,7 @@ class TalkRouterTest {
     }
 
     @Test
-    fun ` 같은 client_msg_id 두번째 호출은 멱등 ack 재전송 (수신자 중복 배달 없음)`() = runBlocking {
+    fun `같은 client_msg_id 두번째 호출은 멱등 ack 재전송 (수신자 중복 배달 없음)`() = runBlocking {
         val sessions = SessionManager()
         val router = TalkRouter(sessions, talkRepository = null)
         val sender = FakeClientSession().apply { userId = "alice" }
@@ -142,7 +142,7 @@ class TalkRouterTest {
     }
 
     @Test
-    fun ` 다른 client_msg_id 는 별개로 처리된다`() = runBlocking {
+    fun `다른 client_msg_id 는 별개로 처리된다`() = runBlocking {
         val sessions = SessionManager()
         val router = TalkRouter(sessions, talkRepository = null)
         val sender = FakeClientSession().apply { userId = "alice" }
@@ -167,7 +167,7 @@ class TalkRouterTest {
     }
 
     @Test
-    fun ` rate limit 초과 시 RATE_LIMITED ack 반환 + 수신자 배달 없음`() = runBlocking {
+    fun `rate limit 초과 시 RATE_LIMITED ack 반환 + 수신자 배달 없음`() = runBlocking {
         val sessions = SessionManager()
         var now = 0L
         val router = TalkRouter(
@@ -205,7 +205,7 @@ class TalkRouterTest {
     }
 
     @Test
-    fun ` rate limit Disabled 는 회귀 없음`() = runBlocking {
+    fun `rate limit Disabled 는 회귀 없음`() = runBlocking {
         val sessions = SessionManager()
         val router = TalkRouter(
             sessions,
@@ -226,7 +226,7 @@ class TalkRouterTest {
     }
 
     @Test
-    fun ` 빈 client_msg_id 는 캐시되지 않아 매번 새 처리`() = runBlocking {
+    fun `빈 client_msg_id 는 캐시되지 않아 매번 새 처리`() = runBlocking {
         val sessions = SessionManager()
         val router = TalkRouter(sessions, talkRepository = null)
         val sender = FakeClientSession().apply { userId = "alice" }

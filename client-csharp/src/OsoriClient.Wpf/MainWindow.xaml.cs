@@ -13,7 +13,7 @@ using OsoriClient.Wpf.Helpers;
 namespace OsoriClient.Wpf;
 
 /// <summary>
-/// OC-D02 MainWindow — 로그인 후 상시 떠있는 허브.
+/// MainWindow — 로그인 후 상시 떠있는 허브.
 /// 대화/조직도/설정 탭으로 스위칭. 개별 대화는 TalkWindow 팝업(Phase D).
 ///
 /// 이번 단계(C-6): 프레임 + 프로필 헤더 + 탭 레일 + 빈 탭 컨텐츠 + 상태 바 뼈대만.
@@ -58,7 +58,7 @@ public partial class MainWindow : Window
         // 초기 글꼴 크기 적용 (저장된 값, 범위 가드)
         var initialFs = _settings.Current.FontSize;
         if (initialFs >= 8 && initialFs <= 48) FontSize = initialFs;
-        // OC-D02: 로그인 시 디폴트 탭은 항상 조직도 (XAML 의 TabOrg IsChecked=True).
+        //: 로그인 시 디폴트 탭은 항상 조직도 (XAML 의 TabOrg IsChecked=True).
         // LastSelectedTab 복원은 의도적으로 호출하지 않음 — 사용자 명시 요구사항.
         TabOrg.IsChecked = true;
         RestoreWindowBounds();
@@ -460,7 +460,7 @@ public partial class MainWindow : Window
         });
     }
 
-    /// <summary>: WebSocket 끊김 → 재접속 진행 중 노란 배너 + 상태바 회전 표시.</summary>
+    /// <summary>WebSocket 끊김 → 재접속 진행 중 노란 배너 + 상태바 회전 표시.</summary>
     private void OnClientReconnecting(object? sender, EventArgs e)
     {
         Dispatcher.BeginInvoke(() =>
@@ -632,7 +632,7 @@ public partial class MainWindow : Window
         };
         win.Closed += (_, _) => _openTalks.Remove(key);
         // 서버는 발신자 본인에게 TalkReceived 를 다시 push 하지 않아서, 내가 보낸 메시지는
-        // 이 이벤트 없이는 대화 목록 미리보기가 갱신될 방법이 없었다x 버그 수정).
+        // 이 이벤트 없이는 대화 목록 미리보기가 갱신될 방법이 없었다 (x 버그 수정).
         win.MessageSentLocally += (text, ts) =>
         {
             var row = GetOrCreateTalkRow(key, displayName, isRoom: mode == TalkWindow.Mode.Room);
@@ -1481,7 +1481,7 @@ public partial class MainWindow : Window
         base.OnClosing(e);
     }
 
-    // ════════/227/228 쪽지 ════════
+    // ════════ 쪽지 ════════
     private readonly ObservableCollection<MessageRowVm> _messageRows = new();
     private string _messageBox = "inbox";
     private int _messageUnread;
@@ -1574,7 +1574,7 @@ public partial class MainWindow : Window
             RecomputeMessageUnread();
         }
 
-        // OC-D04 답장/전체회신/전달 — 상세창이 닫히며 요청한 액션을 이어서 Compose 로 연다
+        // 답장/전체회신/전달 — 상세창이 닫히며 요청한 액션을 이어서 Compose 로 연다
         if (dlg.RequestedAction != MessageDetailAction.None)
         {
             OpenMessageComposeForAction(dlg);
@@ -1742,9 +1742,9 @@ public sealed class MessageRowVm : System.ComponentModel.INotifyPropertyChanged
     public string AttachmentUploadId { get; init; } = "";
     public Visibility AttachmentVisibility => HasAttachment ? Visibility.Visible : Visibility.Collapsed;
 
-    /// <summary>OC-D04 답장/전체회신/전달용 원본 ID. 발신자(보낸사람).</summary>
+    /// <summary>답장/전체회신/전달용 원본 ID. 발신자(보낸사람).</summary>
     public string FromUserId { get; init; } = "";
-    /// <summary>OC-D04 이 쪽지의 전체 수신자 목록 (INBOX/SENT 공통, 서버가 string_agg 로 채움).</summary>
+    /// <summary>이 쪽지의 전체 수신자 목록 (INBOX/SENT 공통, 서버가 string_agg 로 채움).</summary>
     public IReadOnlyList<string> RecipientIds { get; init; } = Array.Empty<string>();
 
     private bool _isRead;

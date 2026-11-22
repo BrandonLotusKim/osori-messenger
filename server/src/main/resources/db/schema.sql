@@ -220,7 +220,7 @@ CREATE INDEX IF NOT EXISTS idx_push_tokens_token ON push_tokens(token);
 
 
 -- ============================================================================
--- 쪽지 (Message) —. 1행=쪽지 본문, 1:N message_recipients.
+-- 쪽지 (Message) — . 1행=쪽지 본문, 1:N message_recipients.
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS messages (
     server_message_id     TEXT PRIMARY KEY,

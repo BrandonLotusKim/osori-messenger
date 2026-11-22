@@ -25,7 +25,7 @@ import org.slf4j.LoggerFactory
  *
  * **제한사항**
  *  - 동기 호출. 수신자 토큰이 여러 개면 순차 발송으로 약간의 레이턴시.
- *  - 재시도/backoff 없음. TransientFailure 는 손실 후보).
+ *  - 재시도/backoff 없음. TransientFailure 는 손실 (후보).
  *  - 메시지 본문을 그대로 body 에 넣음. 민감정보 마스킹은 추후 정책화.
  */
 class PushDeliveryPlugin(

@@ -7,7 +7,7 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * Room repository for group chat (Phase 6,; 멤버 관리 확장 2026-09-16).
+ * Room repository for group chat (Phase 6, ; 멤버 관리 확장 2026-09-16).
  *
  * Tables: talk_rooms, talk_room_members, talk_room_messages.
  *

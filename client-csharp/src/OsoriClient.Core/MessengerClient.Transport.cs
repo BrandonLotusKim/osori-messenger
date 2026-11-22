@@ -9,7 +9,7 @@ namespace OsoriClient.Core;
 public sealed partial class MessengerClient
 {
     /// <summary>
-    /// OC-B1fix — 요청-응답(SendRequestAsync) 최대 대기 시간.
+    /// ix — 요청-응답(SendRequestAsync) 최대 대기 시간.
     /// 이전에는 타임아웃이 전혀 없어서, 서버가 응답을 못 보내는 어떤 이유(디스패치 누락,
     /// 네트워크 단절, 서버측 예외로 ack 미전송 등)로든 호출자가 CancellationToken.None을
     /// 넘기면 영원히 대기했다 — 파일첨부가 "업로드 중"에서 안 끝나는 버그(B1)의 근본 원인.

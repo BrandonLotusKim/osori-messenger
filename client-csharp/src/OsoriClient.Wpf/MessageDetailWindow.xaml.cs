@@ -10,7 +10,7 @@ using OsoriClient.Wpf.Helpers;
 
 namespace OsoriClient.Wpf;
 
-/// <summary>OC-D04 답장/전체회신/전달 요청 종류. MessageDetailWindow 가 닫힐 때 호출자(MainWindow)에게 전달.</summary>
+/// <summary>답장/전체회신/전달 요청 종류. MessageDetailWindow 가 닫힐 때 호출자(MainWindow)에게 전달.</summary>
 public enum MessageDetailAction
 {
     None,
@@ -21,7 +21,7 @@ public enum MessageDetailAction
 
 /// <summary>
 /// 쪽지 상세창. 열자마자 자동 읽음 처리(수신함일 때). 삭제 시 WasDeleted=true 로 닫힘.
-/// OC-D04: 답장/전체회신/전달 버튼 + 첨부파일 다운로드 추가.
+///: 답장/전체회신/전달 버튼 + 첨부파일 다운로드 추가.
 /// </summary>
 public partial class MessageDetailWindow : Window
 {

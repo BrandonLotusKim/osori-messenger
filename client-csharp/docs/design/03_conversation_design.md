@@ -1,4 +1,4 @@
-# ConversationWindow 디자인 스펙 (OC-D03)
+# ConversationWindow 디자인 스펙
 
 > 1:1 대화와 그룹방을 **하나의 창 타입**으로 처리. MainWindow 의 대화 리스트에서
 > 아이템을 더블클릭하거나 조직도 멤버를 더블클릭하면 열린다.
@@ -319,7 +319,7 @@ ConvStatusBanner      (disconnected during open)
   - `OpenConversationAsync(key, mode)` — 중복 방지 Dictionary 관리
 - `MessengerClient`:
   - 기존 API 재사용
-  - `GetRoomHistoryAsync(roomId, since, limit)` (신규 — 서버에 방별 히스토리 API 추가 필요, OC-D03-impl 에서 함께 설계)
+  - `GetRoomHistoryAsync(roomId, since, limit)` (신규 — 서버에 방별 히스토리 API 추가 필요, -impl 에서 함께 설계)
 - `ConversationViewModel` (신규, MVVM 으로 리팩터링 검토 — 현재 code-behind 방식이 빠르면 그대로 유지)
 
 **서버 측 후속 필요 항목**:

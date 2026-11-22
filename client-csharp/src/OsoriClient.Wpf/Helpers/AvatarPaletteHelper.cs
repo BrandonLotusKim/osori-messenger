@@ -7,7 +7,7 @@ using System.Windows.Media;
 namespace OsoriClient.Wpf.Helpers;
 
 /// <summary>
-/// OC-D03 §10 Avatar 색 해시 — 사용자 ID 를 SHA1 → 첫 바이트 mod 8 → 팔레트 인덱스.
+/// §10 Avatar 색 해시 — 사용자 ID 를 SHA1 → 첫 바이트 mod 8 → 팔레트 인덱스.
 /// 같은 사용자는 모든 화면에서 같은 색을 가진다.
 /// </summary>
 public static class AvatarPaletteHelper

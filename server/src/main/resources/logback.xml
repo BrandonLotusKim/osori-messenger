@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
     <!--
- 로그 파일 자동 회전:
+        로그 파일 자동 회전:
           - 콘솔 출력은 기존 그대로 유지 (개발/Docker 환경).
           - 파일 출력은 OSORI_LOG_FILE_ENABLED=true 일 때만 활성 (기본 false).
           - 파일 경로: OSORI_LOG_DIR (기본 ./logs) + osori-server.log

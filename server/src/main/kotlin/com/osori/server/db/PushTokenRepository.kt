@@ -16,7 +16,7 @@ private val logger = LoggerFactory.getLogger("com.osori.server.PushTokenReposito
  *   - `last_seen_at` 은 stale 토큰 청소 배치용 (별도 OC 에서 구현).
  *   - FK 없음 — 푸시 브리지를 별도 DB 인스턴스로 이관할 여지.
  *
- * 이번 슬라이스는 DB 레이어만. proto/Handler/실 FCM 호출은/c.
+ * 이번 슬라이스는 DB 레이어만. proto/Handler/실 FCM 호출은 /c.
  */
 open class PushTokenRepository(private val db: Database) {
 

@@ -33,7 +33,7 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Room (group chat) request handler — Phase 6, 멤버 관리 확장(2026-09-16).
+ * Room (group chat) request handler — Phase 6 , 멤버 관리 확장(2026-09-16).
  *
  * "방장" 없음 — owner_user_id 는 최초 생성자 기록일 뿐, 초대/나가기/이름변경은 전부
  * "현재 이 방의 멤버인지" 만 확인한다(누구나 가능).
