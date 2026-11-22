@@ -40,9 +40,34 @@ public sealed class TalkMessageRow : INotifyPropertyChanged
         Text = msg.Text;
         Direction = isHistory ? MessageDirection.History : MessageDirection.Received;
         _status = TalkMessageStatus.Received;
+        AttachmentUploadId = string.IsNullOrEmpty(msg.AttachmentUploadId) ? null : msg.AttachmentUploadId;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    /// <summary>방에 올린 파일 메시지면 업로드 ID — 더블클릭/Enter 로 내려받는다.</summary>
+    public string? AttachmentUploadId { get; set; }
+
+    private int? _unreadCount;
+
+    /// <summary>내가 보낸 방 메시지를 아직 안 읽은 인원(null = 표시 안 함).</summary>
+    public int? UnreadCount
+    {
+        get => _unreadCount;
+        set
+        {
+            if (_unreadCount == value) return;
+            _unreadCount = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ReadLabel));
+            OnPropertyChanged(nameof(HasUnread));
+        }
+    }
+
+    /// <summary>말풍선 옆 표시: 안 읽은 인원 수 또는 "읽음".</summary>
+    public string ReadLabel => ReadReceiptTracker.Label(_unreadCount);
+
+    public bool HasUnread => _unreadCount is > 0;
 
     public string? ClientTalkId { get; init; }
 
@@ -80,7 +105,18 @@ public sealed class TalkMessageRow : INotifyPropertyChanged
 
     public string Sender { get; set; }
 
-    public string Text { get; set; }
+    // 파일 전송 진행("업로드 중..." → "전송 완료", 다운로드 % 등)처럼 생성 후 문구가 바뀌므로 변경 알림이 필요하다.
+    private string _text = string.Empty;
+    public string Text
+    {
+        get => _text;
+        set
+        {
+            if (_text == value) return;
+            _text = value;
+            OnPropertyChanged();
+        }
+    }
 
     public MessageDirection Direction { get; set; }
 

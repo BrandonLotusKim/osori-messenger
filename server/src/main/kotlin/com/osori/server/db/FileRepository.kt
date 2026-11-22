@@ -22,6 +22,7 @@ class FileRepository(private val db: Database) {
         val bytesWritten: Long,
         val status: String,
         val storagePath: String,
+        val roomId: UUID? = null,
     )
 
     fun createUpload(
@@ -32,14 +33,15 @@ class FileRepository(private val db: Database) {
         mimeType: String,
         totalSize: Long,
         storagePath: String,
+        roomId: UUID? = null,
     ): UUID {
         db.withConnection { conn ->
             conn.prepareStatement(
                 """
                 INSERT INTO file_uploads
                     (upload_id, from_user_id, to_user_id, filename, mime_type,
-                     total_size, bytes_written, status, storage_path, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, 0, 'open', ?, ?)
+                     total_size, bytes_written, status, storage_path, created_at, room_id)
+                VALUES (?, ?, ?, ?, ?, ?, 0, 'open', ?, ?, ?)
                 """.trimIndent(),
             ).use { ps ->
                 ps.setObject(1, uploadId)
@@ -50,6 +52,7 @@ class FileRepository(private val db: Database) {
                 ps.setLong(6, totalSize)
                 ps.setString(7, storagePath)
                 ps.setTimestamp(8, Timestamp.from(Instant.now()))
+                ps.setObject(9, roomId)
                 ps.executeUpdate()
             }
         }
@@ -61,7 +64,7 @@ class FileRepository(private val db: Database) {
             conn.prepareStatement(
                 """
                 SELECT upload_id, from_user_id, to_user_id, filename, mime_type,
-                       total_size, bytes_written, status, storage_path
+                       total_size, bytes_written, status, storage_path, room_id
                 FROM file_uploads
                 WHERE upload_id = ?
                 """.trimIndent(),
@@ -79,8 +82,33 @@ class FileRepository(private val db: Database) {
                         bytesWritten = rs.getLong("bytes_written"),
                         status = rs.getString("status"),
                         storagePath = rs.getString("storage_path"),
+                        roomId = rs.getObject("room_id", UUID::class.java),
                     )
                 }
+            }
+        }
+    }
+
+    /**
+     * 쪽지 첨부 권한: 이 업로드를 첨부한 쪽지의 보낸 사람 또는 (삭제하지 않은) 수신자인지.
+     * 업로드 행의 to_user_id 는 수신자 한 명뿐이라 다중 수신자 쪽지를 위해 별도로 확인한다.
+     */
+    fun isMessageAttachmentParticipant(uploadId: UUID, userId: String): Boolean {
+        return db.withConnection { conn ->
+            conn.prepareStatement(
+                """
+                SELECT 1 FROM messages m
+                LEFT JOIN message_recipients mr
+                       ON mr.server_message_id = m.server_message_id AND mr.deleted_at IS NULL
+                WHERE m.attachment_upload_id = ?
+                  AND (m.from_user_id = ? OR mr.recipient_id = ?)
+                LIMIT 1
+                """.trimIndent(),
+            ).use { ps ->
+                ps.setString(1, uploadId.toString())
+                ps.setString(2, userId)
+                ps.setString(3, userId)
+                ps.executeQuery().use { rs -> rs.next() }
             }
         }
     }

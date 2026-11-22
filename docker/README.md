@@ -14,14 +14,14 @@
 
 ## 개발용 (Postgres 만)
 
-`bash
+```bash
 docker compose -f docker/docker-compose.yml up -d
 # 서버는 호스트에서 `./gradlew run` 으로 기동
-`
+```
 
 ## 운영용 (전체 스택)
 
-`bash
+```bash
 # 1) 환경변수 채우기
 cp docker/.env.example docker/.env
 # .env 안 OSORI_DB_PASS, OSORI_TLS_ENABLED 등 실제 값으로 편집
@@ -35,7 +35,7 @@ docker compose -f docker/docker-compose.prod.yml --env-file docker/.env up -d
 docker compose -f docker/docker-compose.prod.yml ps
 docker logs osori-server -f
 docker logs osori-pgbackup -f
-`
+```
 
 기동 후:
 - 클라 접속: `ws://server-host:7070/ws` 또는 `wss://server-host:7443/ws`
@@ -45,11 +45,13 @@ docker logs osori-pgbackup -f
 
 ## 업데이트 (새 버전 배포)
 
-`bash
+```bash
 git pull
 docker compose -f docker/docker-compose.prod.yml --env-file docker/.env build server
 docker compose -f docker/docker-compose.prod.yml --env-file docker/.env up -d server
-server` 만 재기동 — postgres / pgbackup 은 유지. DB 스키마 변경 있으면 schema.sql 또는 별도 migration.
+```
+
+`server` 만 재기동 — postgres / pgbackup 은 유지. DB 스키마 변경 있으면 schema.sql 또는 별도 migration.
 
 ## 트러블슈팅
 

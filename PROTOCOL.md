@@ -22,7 +22,7 @@
 
 ## 2. Envelope — 모든 프레임의 최외곽 봉투
 
-`proto
+```proto
 message Envelope {
   uint64 sequence = 1;
   oneof payload {
@@ -43,7 +43,7 @@ message Envelope {
     Heartbeat        heartbeat      = 99;
   }
 }
-`
+```
 
 ### 필드 번호 영역 약속 (필드 번호는 변경 금지)
 | 영역 | 용도 | 사용 중 |
@@ -80,7 +80,7 @@ message Envelope {
 
 ### 4.1 LoginRequest (10) / LoginResponse (11) / Logout (12)
 
-`proto
+```proto
 message LoginRequest {
   string user_id        = 1;
   string password       = 2;  // 평문 password. 서버가 Argon2id 로 해시/검증
@@ -105,7 +105,7 @@ message LoginResponse {
 message Logout {
   string session_token = 1;
 }
-`
+```
 
 **서버 동작 (LoginHandler)**
 1. `user_id` blank → `INVALID_CREDENTIALS`
@@ -123,7 +123,7 @@ message Logout {
 
 ### 4.2 SendMessage (20) / SendMessageAck (21) / MessageReceived (22)
 
-`proto
+```proto
 message SendMessage {
   string client_msg_id = 1;  // 클라 발급 멱등 키 (재전송 중복 방지)
   string to_user_id    = 2;
@@ -155,7 +155,7 @@ message MessageReceived {
   string to_user_id    = 5;     // — history self-sent 라우팅
   string reply_to_msg_id = 6;   // — 답글 대상 (빈 문자열 = 일반 메시지)
 }
-`
+```
 
 **서버 동작 (MessageRouter)**
 1. 발신자 `session.userId` 가 null → `SERVER_ERROR` (실제로는 미인증 상태)
@@ -171,7 +171,7 @@ message MessageReceived {
 
 ### 4.3 Heartbeat (99) / HeartbeatAck (98)
 
-`proto
+```proto
 message Heartbeat {
   int64 ts = 1;  // 클라 기준 시각 (epoch millis)
 }
@@ -180,7 +180,7 @@ message HeartbeatAck {
   int64 client_ts = 1;  // 요청 Heartbeat.ts 그대로 echo (RTT 측정용)
   int64 server_ts = 2;
 }
-`
+```
 
 **클라 권장 주기**: 30 초.
 **서버 동작**:
@@ -197,7 +197,7 @@ message HeartbeatAck {
 
 ### 4.4 PresenceEvent (30)
 
-`proto
+```proto
 message PresenceEvent {
   enum State {
     UNKNOWN = 0;
@@ -208,7 +208,7 @@ message PresenceEvent {
   State  state     = 2;
   int64  server_ts = 3;
 }
-`
+```
 
 **서버 동작 (PresenceBroadcaster)**
 
@@ -226,7 +226,7 @@ message PresenceEvent {
 
 ### 4.5 HistoryRequest (40) / HistoryResponse (41)
 
-`proto
+```proto
 message HistoryRequest {
   int64  since_ts = 1;  // 이 시각 이후 (exclusive). 0 이면 전체 범위
   int32  limit    = 2;  // 최대 반환 건수
@@ -236,7 +236,7 @@ message HistoryResponse {
   repeated MessageReceived messages = 1;
   bool   has_more = 2;
 }
-`
+```
 
 **서버 동작 (HistoryHandler)**
 
@@ -255,12 +255,14 @@ message HistoryResponse {
 
 **Kotlin test-client**
 
-`bash
+```bash
 ./test-client --history 50
-`
+```
 로그인 직후 `HistoryRequest{since_ts=0, limit=50}` 을 송신하고, 반환되는 `HistoryResponse.messages` 를 콘솔에 찍는다.
 
-**C# (.NET 8) 클라이언트** — `MessengerClient.GetHistoryAsynccsharp
+**C# (.NET 8) 클라이언트** — `MessengerClient.GetHistoryAsync`
+
+```csharp
 // 로그인 직후 재접속 시 과거 메시지 복구
 var lastSyncMillis = LoadLastSyncTimestamp; // 로컬 캐시 (0 이면 전체)
 var history = await client.GetHistoryAsync(
@@ -279,7 +281,7 @@ if (history.HasMore)
     var nextFrom = history.Messages.Last.ServerTs;
     // ... 반복 호출
 }
-`
+```
 
 **재접속 흐름**
 
@@ -300,7 +302,7 @@ if (history.HasMore)
 
 ### 5.1 정상 로그인 → 메시지 1건 → 종료
 
-`
+```
 [클라 alice]                    [서버]                         [클라 bob (이미 접속 중)]
    |                              |                                 |
    |--- WebSocket connect ------->|                                 |
@@ -328,11 +330,11 @@ if (history.HasMore)
    |                              |---notifyOffline(alice)           |
    |                              |---Envelope(seq=3000003, presence alice OFFLINE)->|
    |<--CloseFrame(NORMAL,"logout")|                                 |
-`
+```
 
 ### 5.2 오프라인 수신자 → 재접속 시 outbox flush
 
-`
+```
 [carol]                  [서버]                  [alice (offline)]
    |---send_msg "yo"------>|                                |
    |                       |---to_user offline               |
@@ -347,11 +349,11 @@ if (history.HasMore)
                           |---fetchOutbox: 1건              |
                           |---Envelope(seq=2000001, msg_received "yo")-->|
                           |---markDelivered(id)             |
-`
+```
 
 ### 5.3 재접속 후 히스토리 동기화
 
-`
+```
 [alice]                  [서버]
    |---login_req---------->|
    |<--login_res OK--------|
@@ -362,11 +364,11 @@ if (history.HasMore)
    |                       |---fetchRecentForUser("alice", 0, 51)
    |                       |---4건 받음 (has_more = 4 > 50 ? false)
    |<--history_res(messages=[m1,m2,m3,m4], has_more=false)---
-`
+```
 
 ### 5.4 Heartbeat / 유휴 세션 리프
 
-`
+```
 [alice]                  [서버]
    |--- heartbeat ts=t1 -->|
    |                       |---lastSeen=now
@@ -383,7 +385,7 @@ if (history.HasMore)
                            |---close(NORMAL,"idle timeout")
                            |---finally → notifyOffline(alice)
                            |---presence broadcast OFFLINE
-`
+```
 
 ---
 
@@ -462,7 +464,7 @@ if (history.HasMore)
 
 ### 10.2 STRICT 모드 플로우
 
-`
+```
 클라 → LoginRequest(user_id=alice, password="secret123", ...)
    ↓
 서버 LoginHandler:
@@ -479,7 +481,7 @@ if (history.HasMore)
         → false 면 INVALID_CREDENTIALS 종료
    5. SessionManager.bind → LoginResponse(OK, token)
    6. PresenceBroadcaster + OutboxFlusher
-`
+```
 
 ### 10.3 Argon2id 파라미터 (OWASP 2024 권장)
 
@@ -549,14 +551,14 @@ salt + params 가 해시 문자열 자체에 포함되어, `verify` 시 추가 �
 
 ### 12.2 지수 백오프 (`ComputeBackoffDelayMs`)
 
-`
+```
 attempt 0 →  1,000 ms  (1s)
 attempt 1 →  2,000 ms  (2s)
 attempt 2 →  4,000 ms  (4s)
 attempt 3 →  8,000 ms  (8s)
 attempt 4 → 16,000 ms  (16s)
 attempt 5+ → 30,000 ms (cap)
-`
+```
 
 공식: `Math.Min(30000, 1000 << attempt)`. 최대 10회 시도 후 `ReconnectFailed` 이벤트.
 
@@ -572,24 +574,24 @@ attempt 5+ → 30,000 ms (cap)
 
 메시지 전송은 `ConnectAsync` 레벨의 재연결과 독립적으로, **동일 client_msg_id 로 재시도** 가능:
 
-`csharp
+```csharp
 // 2회 재시도 — 같은 client_msg_id 유지
 var ack = await client.SendMessageAsync("bob", "hi", maxRetries: 2, ct);
-`
+```
 
 재시도 지연 (`ComputeRetryDelayMs`):
-`
+```
 attempt 0 →   500 ms
 attempt 1 → 1,000 ms
 attempt 2 → 2,000 ms
 attempt 3+→ 3,000 ms (cap)
-`
+```
 
 서버의 `MessageRouter` 멱등 캐시, `ConcurrentHashMap<(fromUser, clientMsgId), CachedAck>`) 가 같은 `client_msg_id` 두 번째 요청에 대해 저장된 ack 를 그대로 반환 → DB 중복 저장 방지.
 
 ### 12.5 이벤트 시퀀스 (정상 재연결)
 
-`
+```
 [클라]                                [서버]
   ├─ WebSocket 수신 루프 예외
   │   (네트워크 drop)
@@ -615,7 +617,7 @@ attempt 3+→ 3,000 ms (cap)
   │   ← HistoryResponse(messages, has_more) ─
   ├─ UI 에 [HIST] 접두사로 표시
   └─ LastSyncStore.Set(userId, lastTs)
-`
+```
 
 ### 12.6 테스트 훅 (`ForceCloseSocketForTestAsync`)
 
@@ -643,7 +645,7 @@ smoke test 가 실제 WebSocket drop 을 시뮬레이션할 수 있도록 `inter
 
 ### 13.2 메시지 구조
 
-`protobuf
+```protobuf
 message RoomHistoryRequest {
   string room_id      = 1;
   int64  since_ts     = 2;  // exclusive. 0 = 전체 범위
@@ -659,7 +661,7 @@ message RoomHistoryResponse {
   repeated RoomMessageReceived messages = 4;
   bool   has_more      = 5;
 }
-`
+```
 
 ### 13.3 정책
 
@@ -688,7 +690,7 @@ message RoomHistoryResponse {
 
 ### 14.2 핵심 흐름
 
-`
+```
 발신자 alice                서버                  수신자 bob
    │                          │                       │
    │  MemoSend(rid=[bob])     │                       │
@@ -701,7 +703,7 @@ message RoomHistoryResponse {
    │  MemoSendAck(OK)         │                       │
    │<─────────────────────────┤                       │
    │                          │ markDelivered(bob)    │
-`
+```
 
 bob 오프라인 시:
 - `MemoSend` 시점에 `delivered_at=NULL` 로 누적
@@ -709,7 +711,7 @@ bob 오프라인 시:
 
 ### 14.3 받은/보낸쪽지함 페이지네이션
 
-`protobuf
+```protobuf
 message MemoListRequest {
   enum Box { INBOX=0; SENT=1; }
   string client_req_id = 1;
@@ -717,14 +719,14 @@ message MemoListRequest {
   int64  since_ts      = 3;  // exclusive
   int32  limit         = 4;  // 기본 50, 상한 200
 }
-`
+```
 
 - INBOX: 본인 = 수신자 + 본인 삭제 X
 - SENT: 본인 = 발송자 + 본인 삭제 X. `recipient_ids` 는 `string_agg` 로 다중 집계
 
 ### 14.4 읽음 / 삭제
 
-- `MemoMarkRead`: `memo_recipients.read_at = now` RETURNING. 본인 받은쪽지만 가능 — 발송자 시도 시 `NOT_FOUND`
+- `MemoMarkRead`: `memo_recipients.read_at = now()` RETURNING. 본인 받은쪽지만 가능 — 발송자 시도 시 `NOT_FOUND`
 - `MemoDelete`: 발송자/수신자 분기. 발송자 호출 → `memos.deleted_at_by_sender`. 수신자 호출 → `memo_recipients.deleted_at`. 어느쪽도 아니면 `NOT_OWNER`. **소프트 삭제** — 상대 시야에는 보존
 
 ### 14.5 첨부

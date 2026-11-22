@@ -22,10 +22,12 @@
 기존: `recipientIds = listOf(userId)` (본인 1명 고정)
 변경: `memo_recipients` 서브쿼리로 `string_agg` 하여 해당 쪽지의 **전체 수신자**를 반환 (스키마 변경 없음, 쿼리만 확장)
 
-`sql
+```sql
 (SELECT string_agg(mr2.recipient_id, ',' ORDER BY mr2.recipient_id)
  FROM memo_recipients mr2 WHERE mr2.server_memo_id = m.server_memo_id) AS all_recipients
-MemoEntry.recipient_ids` (proto 필드 자체는 기존 그대로, 값 채우는 방식만 변경 — 하위호환).
+```
+
+`MemoEntry.recipient_ids` (proto 필드 자체는 기존 그대로, 값 채우는 방식만 변경 — 하위호환).
 
 ### 1.2 검증
 `MemoFullStackTest` 에 케이스 추가: alice → [bob, carol] 동시 발송 → bob 이 받은쪽지함 조회 시 `recipient_ids` 에 bob·carol 둘 다 포함되는지 확인. 로컬 Postgres 16 portable(`osori_test`) 기동 후 `gradlew test` 전체 스위트(서버) 통과 확인 완료 (2026-07-10).
@@ -35,14 +37,15 @@ MemoEntry.recipient_ids` (proto 필드 자체는 기존 그대로, 값 채우는
 ## 2. 클라이언트 변경
 
 ### 2.1 `MemoRowVm` 필드 확장
-`
+```
 FromUserId       string              // 원 발신자 (INBOX/SENT 공통)
 RecipientIds     IReadOnlyList<string> // 해당 쪽지의 전체 수신자
 AttachmentVisibility Visibility      // HasAttachment 바인딩용
-FromReceived`(실시간 푸시)는 서버가 sibling recipient 를 안 주므로 `RecipientIds=[me]` 로 임시 채움 — 새로고침(F5) 또는 박스 재조회 시 `FromEntry` 로 교체되며 정확한 값으로 갱신됨. **알려진 제약**: 방금 푸시로 받은 그룹 쪽지를 새로고침 전에 바로 열면 전체회신이 일시적으로 비활성일 수 있음.
+```
+`FromReceived`(실시간 푸시)는 서버가 sibling recipient 를 안 주므로 `RecipientIds=[me]` 로 임시 채움 — 새로고침(F5) 또는 박스 재조회 시 `FromEntry` 로 교체되며 정확한 값으로 갱신됨. **알려진 제약**: 방금 푸시로 받은 그룹 쪽지를 새로고침 전에 바로 열면 전체회신이 일시적으로 비활성일 수 있음.
 
 ### 2.2 `MemoDetailWindow` — 액션바 확장
-`
+```
 ╔═══════════════════════════════════╗
 ║ 쪽지                          [×] ║
 ╠═══════════════════════════════════╣
@@ -56,7 +59,7 @@ FromReceived`(실시간 푸시)는 서버가 sibling recipient 를 안 주므로
 ╠═══════════════════════════════════╣
 ║[↩][↩↩][↪]      상태...  [삭제][닫기]║
 ╚═══════════════════════════════════╝
-`
+```
 - **답장(↩)**: INBOX 전용, 항상 활성. 대상 = `FromUserId` 1명.
 - **전체회신(↩↩)**: INBOX 전용. `RecipientIds` 에 나 말고 다른 사람이 있을 때만 활성(=그룹 쪽지). 대상 = `FromUserId` + (`RecipientIds` \ 나).
 - **전달(↪)**: INBOX/SENT 공통 항상 활성. 대상 = 빈 칸(직접 입력).
@@ -82,7 +85,7 @@ FromReceived`(실시간 푸시)는 서버가 sibling recipient 를 안 주므로
 ---
 
 ## 4. AutomationId 추가
-`
+```
 MemoReplyButton, MemoReplyAllButton, MemoForwardButton
 MemoAttachmentDownloadButton
-`
+```

@@ -59,6 +59,10 @@ sealed interface RateLimitPolicy {
                 TokenBucket(capacity, refillPerSecond, clock)
             }.tryConsume()
         }
+
+        /** 같은 설정(용량·속도·면제)으로 버킷만 새로 갖는 정책 — 요청 종류별 제한용. */
+        fun copyForNewBucket(): PerUserTokenBucket =
+            PerUserTokenBucket(capacity, refillPerSecond, clock, exemptUserIds)
     }
 }
 

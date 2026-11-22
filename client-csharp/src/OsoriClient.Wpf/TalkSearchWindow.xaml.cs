@@ -8,8 +8,10 @@ using OsoriClient.Wpf.Helpers;
 namespace OsoriClient.Wpf;
 
 /// <summary>
-/// 메시지 검색 창. 키워드 + Enter 또는 [검색] 버튼.
-/// 결과 더블클릭 시 해당 상대 ID 를 소유자 MainWindow 로 전달해 대화창을 연다.
+/// 대화 검색 창. 키워드 + Enter 또는 [검색] 버튼.
+/// 서버가 "내가 멤버인 대화방"의 메시지를 찾아 방 ID 와 함께 돌려준다(hits).
+/// 결과 더블클릭/Enter 시 그 방을 소유자(MainWindow)가 연다.
+/// 옛 서버(hits 없이 talks 만 주는 경우)면 상대 ID 기준으로 연다.
 /// </summary>
 public partial class TalkSearchWindow : Window
 {
@@ -17,7 +19,13 @@ public partial class TalkSearchWindow : Window
     private readonly string _myUserId;
     private readonly ObservableCollection<ResultRow> _results = new();
 
-    /// <summary>더블클릭으로 선택된 상대방 ID. 소유자(MainWindow)가 close 후 사용.</summary>
+    /// <summary>선택된 결과의 방 ID(방 검색 결과일 때).</summary>
+    public string? SelectedRoomId { get; private set; }
+
+    /// <summary>선택된 결과의 방 표시 이름.</summary>
+    public string? SelectedRoomTitle { get; private set; }
+
+    /// <summary>옛 1:1 결과에서 선택된 상대방 ID(방 ID 가 없을 때만).</summary>
     public string? SelectedCounterpart { get; private set; }
 
     public TalkSearchWindow(MessengerClient client, string myUserId)
@@ -27,26 +35,30 @@ public partial class TalkSearchWindow : Window
         _client = client;
         _myUserId = myUserId;
         ResultsListBox.ItemsSource = _results;
+        Loaded += (_, _) => KeywordTextBox.Focus();
     }
 
     public sealed class ResultRow
     {
         public string ServerTalkId { get; init; } = "";
+        public string RoomId { get; init; } = "";
+        public string Title { get; init; } = "";
         public string FromUserId { get; init; } = "";
-        public string ToUserId { get; init; } = "";
         public string Text { get; init; } = "";
         public long ServerTs { get; init; }
         public string TimestampText => DateTimeOffset.FromUnixTimeMilliseconds(ServerTs).LocalDateTime.ToString("yyyy-MM-dd HH:mm");
         public string Counterpart { get; init; } = "";
+        public string SenderText => string.IsNullOrEmpty(FromUserId) ? "" : $" · {FromUserId}";
     }
 
     private async Task RunSearchAsync()
     {
         var keyword = KeywordTextBox.Text.Trim();
+        EmptyPanel.Visibility = Visibility.Collapsed;
         if (keyword.Length == 0)
         {
             _results.Clear();
-            StatusTextBlock.Text = "키워드를 입력하세요.";
+            StatusTextBlock.Text = "검색어를 입력하세요.";
             return;
         }
 
@@ -59,8 +71,22 @@ public partial class TalkSearchWindow : Window
             var resp = await _client.SearchMessagesAsync(keyword, limit: 100, ct: CancellationToken.None);
             if (resp.Result != TalkSearchResponse.Types.Result.Ok)
             {
-                StatusTextBlock.Text = $"검색 실패: {resp.Result}";
+                StatusTextBlock.Text = ResultMessages.Search(resp.Result);
                 return;
+            }
+
+            foreach (var h in resp.Hits)
+            {
+                var title = MainWindow.ResolveRoomDisplayName(h.RoomName, h.RoomNameIsCustom, h.MemberIds, _myUserId, h.RoomId);
+                _results.Add(new ResultRow
+                {
+                    ServerTalkId = h.ServerTalkId,
+                    RoomId = h.RoomId,
+                    Title = title,
+                    FromUserId = h.FromUserId,
+                    Text = h.Text,
+                    ServerTs = h.ServerTs,
+                });
             }
 
             foreach (var m in resp.Talks)
@@ -69,19 +95,28 @@ public partial class TalkSearchWindow : Window
                 _results.Add(new ResultRow
                 {
                     ServerTalkId = m.ServerTalkId,
+                    Title = counterpart,
                     FromUserId = m.FromUserId,
-                    ToUserId = m.ToUserId,
                     Text = m.Text,
                     ServerTs = m.ServerTs,
                     Counterpart = counterpart,
                 });
             }
-            var moreTail = resp.HasMore ? " (더 많음)" : "";
-            StatusTextBlock.Text = $"'{keyword}' 결과 {resp.MatchedCount}건{moreTail}";
+
+            if (_results.Count == 0)
+            {
+                EmptyTitleText.Text = $"'{keyword}' 와 일치하는 대화가 없습니다";
+                EmptyPanel.Visibility = Visibility.Visible;
+                StatusTextBlock.Text = "결과 0건";
+                return;
+            }
+
+            var moreTail = resp.HasMore ? " (최근 100건까지 표시)" : "";
+            StatusTextBlock.Text = $"'{keyword}' 결과 {_results.Count}건{moreTail} — 더블클릭 또는 Enter 로 대화방 열기";
         }
         catch (Exception ex)
         {
-            StatusTextBlock.Text = $"오류: {ex.Message}";
+            StatusTextBlock.Text = $"검색 중 오류가 났습니다: {ex.Message}";
         }
         finally
         {
@@ -106,15 +141,54 @@ public partial class TalkSearchWindow : Window
             e.Handled = true;
             await RunSearchAsync();
         }
+        else if (e.Key == Key.Down && _results.Count > 0)
+        {
+            e.Handled = true;
+            ResultsListBox.SelectedIndex = 0;
+            (ResultsListBox.ItemContainerGenerator.ContainerFromIndex(0) as UIElement)?.Focus();
+        }
     }
 
     private void ResultsListBox_OnMouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if (ResultsListBox.SelectedItem is ResultRow row && !string.IsNullOrEmpty(row.Counterpart))
+        AcceptSelection();
+    }
+
+    private void ResultsListBox_OnKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
         {
-            SelectedCounterpart = row.Counterpart;
-            DialogResult = true;
+            e.Handled = true;
+            AcceptSelection();
+        }
+    }
+
+    private void Window_OnKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape)
+        {
+            e.Handled = true;
             Close();
         }
+    }
+
+    private void AcceptSelection()
+    {
+        if (ResultsListBox.SelectedItem is not ResultRow row) return;
+        if (!string.IsNullOrEmpty(row.RoomId))
+        {
+            SelectedRoomId = row.RoomId;
+            SelectedRoomTitle = row.Title;
+        }
+        else if (!string.IsNullOrEmpty(row.Counterpart))
+        {
+            SelectedCounterpart = row.Counterpart;
+        }
+        else
+        {
+            return;
+        }
+        DialogResult = true;
+        Close();
     }
 }

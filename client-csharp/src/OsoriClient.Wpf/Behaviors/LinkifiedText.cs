@@ -58,6 +58,13 @@ public static class LinkifiedText
                     NavigateUri = new System.Uri(href, System.UriKind.Absolute),
                 };
                 link.RequestNavigate += OnRequestNavigate;
+                // 기본 Hyperlink 파랑은 어두운 말풍선 위에서 대비가 약하다(받은 메시지). 글자색이 밝으면
+                // 어두운 배경으로 보고 밝은 링크색을 쓴다. 노란 말풍선(내 메시지)은 기본 파랑 유지.
+                if (tb.Foreground is System.Windows.Media.SolidColorBrush fg && IsLight(fg.Color)
+                    && Application.Current?.TryFindResource("LinkOnDarkBrush") is System.Windows.Media.Brush linkBrush)
+                {
+                    link.Foreground = linkBrush;
+                }
                 tb.Inlines.Add(link);
             }
             else if (m.Groups["mention"].Success)
@@ -65,7 +72,7 @@ public static class LinkifiedText
                 //: @mention — 노랑 색 + SemiBold 강조 (자동완성/알림 분기는 v0.2)
                 var mention = new Run(m.Value)
                 {
-                    Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrandBrush"),
+                    Foreground = Application.Current?.TryFindResource("BrandBrush") as System.Windows.Media.Brush ?? tb.Foreground,
                     FontWeight = System.Windows.FontWeights.SemiBold,
                 };
                 tb.Inlines.Add(mention);
@@ -95,4 +102,8 @@ public static class LinkifiedText
         }
         e.Handled = true;
     }
+
+    private static bool IsLight(System.Windows.Media.Color c) =>
+        (0.2126 * c.R + 0.7152 * c.G + 0.0722 * c.B) / 255.0 > 0.6;
 }
+

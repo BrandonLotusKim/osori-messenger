@@ -21,6 +21,8 @@ import com.osori.proto.v1.TalkRoomRenamed
 import com.osori.proto.v1.TalkRoomSend
 import com.osori.proto.v1.TalkRoomSendAck
 import com.osori.proto.v1.TalkRoomReceived
+import com.osori.proto.v1.TalkRoomReadReport
+import com.osori.proto.v1.TalkRoomReadUpdate
 import com.osori.server.db.TalkRoomRepository
 import com.osori.server.session.ClientSession
 import com.osori.server.session.SessionManager
@@ -184,6 +186,7 @@ class TalkRoomHandler(
                     .setResult(TalkRoomInviteAck.Result.NO_VALID_TARGETS)
                     .build()
             }
+            auditRepository?.recordRoomInvited(senderUserId, req.roomId, outcome.added)
             val fullMembers = repo.listMembers(roomUuid)
             val roomRow = repo.getRoom(roomUuid)
             broadcastMemberEvent(
@@ -238,6 +241,9 @@ class TalkRoomHandler(
                 TalkRoomRepository.RemoveMemberResult.OK -> TalkRoomLeaveAck.Result.OK
                 TalkRoomRepository.RemoveMemberResult.ROOM_NOT_FOUND -> TalkRoomLeaveAck.Result.ROOM_NOT_FOUND
                 TalkRoomRepository.RemoveMemberResult.NOT_MEMBER -> TalkRoomLeaveAck.Result.NOT_MEMBER
+            }
+            if (mapped == TalkRoomLeaveAck.Result.OK) {
+                auditRepository?.recordRoomLeft(senderUserId, req.roomId, outcome.roomDeleted)
             }
             if (mapped == TalkRoomLeaveAck.Result.OK && !outcome.roomDeleted) {
                 // 클라는 "나가기 직전 인원수" 를 member_ids.size + affected_user_ids.size(=1) 로
@@ -297,6 +303,7 @@ class TalkRoomHandler(
             if (!renamed) {
                 return@runCatching renameAckFailure(req.clientReqId, req.roomId, TalkRoomRenameAck.Result.ROOM_NOT_FOUND)
             }
+            auditRepository?.recordRoomRenamed(senderUserId, req.roomId, req.newName)
             val members = repo.listMembers(roomUuid)
             broadcastRenamed(roomUuid, req.newName, members)
             TalkRoomRenameAck.newBuilder()
@@ -422,6 +429,10 @@ class TalkRoomHandler(
             return
         }
 
+        // 보낸 사람은 자기 메시지까지 읽은 것으로 본다(다른 멤버 화면의 "안 읽은 인원" 계산과 일치).
+        runCatching { repo.advanceLastRead(roomUuid, senderUserId, serverTsInstant) }
+            .onFailure { t -> logger.warn("advanceLastRead on send failed room={}", req.roomId, t) }
+
         val ack = TalkRoomSendAck.newBuilder()
             .setClientTalkId(req.clientTalkId)
             .setServerTalkId(roomMsgUuid.toString())
@@ -440,6 +451,14 @@ class TalkRoomHandler(
             .build()
 
         val members = runCatching { repo.listMembers(roomUuid) }.getOrDefault(emptyList())
+        // 감사 로그: 본문은 남기지 않고 메시지 ID·크기(UTF-8 바이트)·수신 대상 수만.
+        auditRepository?.recordRoomMessageSent(
+            fromUserId = senderUserId,
+            roomId = req.roomId,
+            messageId = roomMsgUuid.toString(),
+            bytes = req.text.toByteArray(Charsets.UTF_8).size,
+            recipients = members.count { it != senderUserId },
+        )
         members.forEach { memberId ->
             if (memberId == senderUserId) return@forEach
             val recipient = sessions.get(memberId) ?: return@forEach
@@ -451,6 +470,41 @@ class TalkRoomHandler(
                 recipient.send(Frame.Binary(true, envelope.toByteArray()))
                 com.osori.server.metrics.Metrics.roomBroadcasts.incrementAndGet()
             }.onFailure { t -> logger.warn("broadcast to {} failed", memberId, t) }
+        }
+    }
+
+    /**
+     * 읽음 보고: 요청자가 현재 멤버이고 읽음 위치가 실제로 앞으로 이동했을 때만 저장·방송한다.
+     * 응답은 없다(클라는 보내고 잊는다). 미래 시각은 서버 현재 시각으로 자른다.
+     */
+    suspend fun handleReadReport(sender: ClientSession, req: TalkRoomReadReport) {
+        val userId = sender.userId ?: return
+        val repo = talkRoomRepository ?: return
+        val roomUuid = parseRoomId(req.roomId) ?: return
+        if (req.lastReadTs <= 0) return
+        val clamped = minOf(req.lastReadTs, nowMillis())
+        val members = runCatching {
+            if (!repo.isMember(roomUuid, userId)) return
+            if (!repo.advanceLastRead(roomUuid, userId, Instant.ofEpochMilli(clamped))) return
+            repo.listMembers(roomUuid)
+        }.getOrElse { t ->
+            logger.warn("read report failed user={} room={}", userId, req.roomId, t)
+            return
+        }
+        val update = TalkRoomReadUpdate.newBuilder()
+            .setRoomId(req.roomId)
+            .setUserId(userId)
+            .setLastReadTs(clamped)
+            .build()
+        for (memberId in members) {
+            if (memberId == userId) continue
+            val recipient = sessions.get(memberId) ?: continue
+            val envelope = Envelope.newBuilder()
+                .setSequence(serverSequence.incrementAndGet())
+                .setTalkRoomReadUpdate(update)
+                .build()
+            runCatching { recipient.send(Frame.Binary(true, envelope.toByteArray())) }
+                .onFailure { t -> logger.warn("read update to {} failed", memberId, t) }
         }
     }
 

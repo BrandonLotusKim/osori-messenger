@@ -8,18 +8,18 @@
 
 ### 1. certbot 으로 인증서 발급 (포트 80 임시 사용)
 
-`bash
+```bash
 sudo certbot certonly --standalone -d osori.example.com
 # 발급 결과 위치:
 #   /etc/letsencrypt/live/osori.example.com/fullchain.pem
 #   /etc/letsencrypt/live/osori.example.com/privkey.pem
-`
+```
 
 ### 2. PEM → PKCS12 → JKS 변환
 
 오소리 서버는 JKS keystore 만 받는다. 변환 한 줄:
 
-`bash
+```bash
 # PEM 두 개 → p12 합성
 sudo openssl pkcs12 -export \
   -in  /etc/letsencrypt/live/osori.example.com/fullchain.pem \
@@ -39,33 +39,37 @@ keytool -importkeystore \
 
 rm /tmp/osori.p12  # p12 는 더 이상 필요 없음
 chmod 600 /path/to/repo/docker/certs/keystore.jks
-`
+```
 
 ### 3. `.env` 업데이트 + 재기동
 
-`env
+```env
 OSORI_TLS_ENABLED=true
 OSORI_KEYSTORE_PASSWORD=CHANGE_ME_STRONG_PW
 OSORI_KEY_ALIAS=osori
 OSORI_KEY_PASSWORD=CHANGE_ME_STRONG_PW
-bash
+```
+
+```bash
 docker compose -f docker/docker-compose.prod.yml --env-file docker/.env up -d
-`
+```
 
 확인:
-`bash
+```bash
 openssl s_client -connect osori.example.com:7443 -showcerts < /dev/null | head -20
-`
+```
 
 ### 4. 자동 갱신 (90일마다)
 
 Let's Encrypt 는 90일 만료. cron 또는 systemd timer 로:
 
-`bash
+```bash
 # /etc/cron.d/osori-cert-renew (매주 일요일 03:00)
 0 3 * * 0 root certbot renew --quiet \
   --post-hook "bash /path/to/repo/docker/scripts/refresh-keystore.sh && docker restart osori-server"
-refresh-keystore.sh` 는 위 2번 단계를 자동화한 스크립트로 별도 작성.
+```
+
+`refresh-keystore.sh` 는 위 2번 단계를 자동화한 스크립트로 별도 작성.
 
 ---
 
@@ -73,7 +77,7 @@ refresh-keystore.sh` 는 위 2번 단계를 자동화한 스크립트로 별도 
 
 기업 내부망 전용이면:
 
-`bash
+```bash
 # 자체 서명 keystore 생성 — 도메인이 server.internal 라고 가정
 keytool -genkeypair \
   -alias osori \
@@ -85,7 +89,7 @@ keytool -genkeypair \
   -keypass CHANGE_ME_STRONG_PW \
   -dname "CN=server.internal, OU=IT, O=Osori, L=Seoul, ST=Seoul, C=KR" \
   -ext "SAN=DNS:server.internal,IP:10.0.0.5"
-`
+```
 
 클라이언트 측: 자체 서명이라 사용자 PC 신뢰 저장소에 해당 cert 등록 필요. 또는 클라 코드의 `acceptSelfSignedTls=true` 옵션 활성 (운영에선 비권장).
 
@@ -100,7 +104,7 @@ WebSocket 통과시키는 nginx/Caddy 를 앞에 두고 TLS termination 거기�
 
 nginx 설정 스니펫:
 
-`nginx
+```nginx
 location /ws {
   proxy_pass http://osori-server:7070;
   proxy_http_version 1.1;
@@ -109,7 +113,7 @@ location /ws {
   proxy_set_header Host $host;
   proxy_read_timeout 86400s;
 }
-`
+```
 
 ---
 

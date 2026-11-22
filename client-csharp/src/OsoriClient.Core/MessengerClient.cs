@@ -33,6 +33,8 @@ public sealed partial class MessengerClient : IAsyncDisposable
     private long _sequence;
     private string? _sessionToken;
     private string? _userId;
+    /// <summary>마지막으로 로그인한 사용자 ID(로그인 전이면 null).</summary>
+    public string? UserId => _userId;
     private string? _password;
     private string? _deviceId;
     private Uri? _serverUri;
@@ -43,6 +45,9 @@ public sealed partial class MessengerClient : IAsyncDisposable
     private bool _manualDisconnectRequested;
 
     public bool AutoReconnectEnabled { get; set; } = true;
+
+    /// <summary>현재 온라인 사용자 집합(서버 PresenceEvent 누적).</summary>
+    public PresenceTracker Presence { get; } = new();
 
     public event EventHandler<TalkReceivedEventArgs>? TalkReceived;
     public event TalkHistoryReceivedEventHandler? TalkHistoryReceived;
@@ -55,9 +60,43 @@ public sealed partial class MessengerClient : IAsyncDisposable
     public event EventHandler<TalkRoomMemberEvent>? RoomMemberChanged;
     /// <summary>방 이름이 바뀔 때 서버가 실시간으로 보내는 이벤트.</summary>
     public event EventHandler<TalkRoomRenamed>? RoomRenamed;
+    /// <summary>방 멤버의 읽음 위치가 앞으로 이동함(서버 push).</summary>
+    public event EventHandler<TalkRoomReadUpdate>? RoomReadUpdated;
     public event EventHandler? Reconnecting;
     public event EventHandler? Reconnected;
     public event EventHandler<string>? ReconnectFailed;
+
+    /// <summary>
+    /// 같은 계정이 다른 곳에서 로그인해 서버가 이 세션을 끊었을 때(인자 = 안내 문구).
+    /// 이때는 자동 재접속을 하지 않는다 — 재접속하면 상대 세션을 끊고, 상대도 재접속해 무한 교대가 된다.
+    /// </summary>
+    public event EventHandler<string>? SessionSuperseded;
+
+    private volatile bool _sessionSuperseded;
+    private int _supersededRaised;
+
+    /// <summary>다른 곳 로그인으로 끊긴 상태인지(다시 로그인하기 전까지 true).</summary>
+    public bool IsSessionSuperseded => _sessionSuperseded;
+
+    internal const string SupersededDefaultMessage = "다른 곳에서 같은 계정으로 로그인되어 연결이 끊겼습니다.";
+
+    /// <summary>서버 웹소켓 종료 설명(close reason) 중 중복 로그인 표식.</summary>
+    internal const string SupersededCloseDescription = "already-online";
+
+    /// <summary>서버 종료 통지/종료 설명이 "다른 곳 로그인" 인지 판정(순수 함수, 테스트용).</summary>
+    internal static bool IsSupersededSignal(SessionClosed? notice, string? closeDescription) =>
+        notice?.Reason == SessionClosed.Types.Reason.Superseded
+        || string.Equals(closeDescription, SupersededCloseDescription, StringComparison.Ordinal);
+
+    private void MarkSuperseded(string? message)
+    {
+        _sessionSuperseded = true;
+        StopHeartbeat();
+        if (Interlocked.Exchange(ref _supersededRaised, 1) == 0)
+        {
+            SessionSuperseded?.Invoke(this, string.IsNullOrWhiteSpace(message) ? SupersededDefaultMessage : message!);
+        }
+    }
 
     public async Task ConnectAsync(Uri serverUri, bool acceptSelfSignedTls, CancellationToken ct)
     {
@@ -81,6 +120,7 @@ public sealed partial class MessengerClient : IAsyncDisposable
         _userId = userId;
         _password = password;
         _deviceId = deviceId;
+        Presence.Clear();
 
         var response = await SendRequestAsync(
             new Envelope
@@ -98,6 +138,11 @@ public sealed partial class MessengerClient : IAsyncDisposable
 
         _sessionToken = response.LoginRes.SessionToken;
         _reconnectAttempts = 0;
+        if (response.LoginRes.Status == LoginResponse.Types.Status.Ok)
+        {
+            _sessionSuperseded = false;
+            Interlocked.Exchange(ref _supersededRaised, 0);
+        }
         return response.LoginRes;
     }
 

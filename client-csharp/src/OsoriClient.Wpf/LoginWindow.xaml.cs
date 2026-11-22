@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Threading;
 using System.Windows;
@@ -47,10 +47,19 @@ public partial class LoginWindow : Window
     /// 자동 로그인 시도를 건너뛴다(체크박스/비밀번호 칸은 평소처럼 채워져 있어 사용자가 그냥
     /// 로그인 버튼만 누르면 됨).
     /// </param>
-    public LoginWindow(bool suppressAutoLogin)
+    public LoginWindow(bool suppressAutoLogin) : this(suppressAutoLogin, notice: null)
+    {
+    }
+
+    /// <param name="notice">창이 뜰 때 상태 줄에 보여 줄 안내(예: 다른 곳 로그인으로 끊김).</param>
+    public LoginWindow(bool suppressAutoLogin, string? notice)
     {
         _suppressAutoLogin = suppressAutoLogin;
         InitializeComponent();
+        if (!string.IsNullOrWhiteSpace(notice))
+        {
+            Loaded += (_, _) => ShowStatus(notice!, isError: true);
+        }
         WindowCornerHelper.ApplyRoundCorners(this);
         ApplySettingsToUi();
         UserIdCombo.TextChanged += UserIdCombo_OnTextChanged;
@@ -247,7 +256,7 @@ public partial class LoginWindow : Window
 
             if (response.Status != LoginResponse.Types.Status.Ok)
             {
-                ShowStatus($"로그인 실패: {response.Status}", isError: true);
+                ShowStatus(ResultMessages.Login(response.Status), isError: true);
                 PasswordTextBox.Clear();
                 PasswordTextBox.Focus();
 

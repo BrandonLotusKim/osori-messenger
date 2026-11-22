@@ -80,9 +80,14 @@ class TalkRoomHistoryHandler(
                 .setFromUserId(row.fromUserId)
                 .setText(row.text)
                 .setServerTs(row.serverTs.toEpochMilli())
+                .setAttachmentUploadId(row.attachmentUploadId ?: "")
                 .build()
         }
-        send(session, sequence, req.clientReqId, req.roomId, TalkRoomHistoryResponse.Status.OK, messages, hasMore)
+        // 읽음 위치 — 실패해도 히스토리 자체는 내려준다(읽음 표시만 빠짐).
+        val readStates = runCatching { repo.listReadStates(roomUuid) }.getOrDefault(emptyMap()).map { (uid, ts) ->
+            com.osori.proto.v1.TalkRoomReadState.newBuilder().setUserId(uid).setLastReadTs(ts.toEpochMilli()).build()
+        }
+        send(session, sequence, req.clientReqId, req.roomId, TalkRoomHistoryResponse.Status.OK, messages, hasMore, readStates)
         logger.info("방 히스토리 응답 roomId={} userId={} since={} returned={} hasMore={}",
             req.roomId, userId, sinceMillis, taken.size, hasMore)
     }
@@ -90,6 +95,7 @@ class TalkRoomHistoryHandler(
     private suspend fun send(
         session: ClientSession, sequence: Long, clientReqId: String, roomId: String,
         status: TalkRoomHistoryResponse.Status, messages: List<TalkRoomReceived>, hasMore: Boolean,
+        readStates: List<com.osori.proto.v1.TalkRoomReadState> = emptyList(),
     ) {
         val res = TalkRoomHistoryResponse.newBuilder()
             .setClientReqId(clientReqId)
@@ -97,6 +103,7 @@ class TalkRoomHistoryHandler(
             .setRoomId(roomId)
             .addAllTalks(messages)
             .setHasMore(hasMore)
+            .addAllReadStates(readStates)
             .build()
         val env = Envelope.newBuilder().setSequence(sequence).setTalkRoomHistoryRes(res).build()
         session.send(Frame.Binary(true, env.toByteArray()))

@@ -21,9 +21,10 @@ fun main(args: Array<String>) {
         System.err.println("예: auditSearch auth.login.failed 100")
         System.err.println("주요 event_type:")
         System.err.println("  - auth.login.success / auth.login.failed")
-        System.err.println("  - auth.logout.explicit / auth.logout.implicit")
-        System.err.println("  - room.created / room.member.added")
-        System.err.println("  - file.upload.completed")
+        System.err.println("  - auth.logout / auth.session.superseded(다른 곳 로그인으로 끊김)")
+        System.err.println("  - room.created / room.invited / room.renamed / room.left")
+        System.err.println("  - room.msg.sent(대화방 메시지: ID·크기만, 본문 없음) / msg.sent(옛 1:1)")
+        System.err.println("  - file.uploaded / file.downloaded")
         exitProcess(2)
     }
     val eventType = args[0]

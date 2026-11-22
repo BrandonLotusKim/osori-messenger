@@ -22,7 +22,7 @@
     <Color x:Key="BorderStrong">#FF50535A</Color>
     <Color x:Key="TextPrimary">#FFE8E8E8</Color>       <!-- 다크 위 주 텍스트 -->
     <Color x:Key="TextSecondary">#FFA8AAB0</Color>
-    <Color x:Key="TextMuted">#FF7A7C82</Color>
+    <Color x:Key="TextMuted">#FF9A9CA2</Color>         <!-- 보조 텍스트: #2A2C30 위 5.1:1, #1F2024 위 5.9:1 (기준 4.5:1) -->
 
     <!-- ─── 상태 (다크 위 보정 톤) ─── -->
     <Color x:Key="Error">#FFEF5350</Color>
@@ -83,6 +83,8 @@
     <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource TextPrimary}" />
     <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource TextSecondary}" />
     <SolidColorBrush x:Key="TextMutedBrush" Color="{StaticResource TextMuted}" />
+    <!-- 어두운 배경 위 링크(받은 말풍선 등): #2A2C30 위 6.7:1 -->
+    <SolidColorBrush x:Key="LinkOnDarkBrush" Color="#FF8AB4FF" />
 
     <SolidColorBrush x:Key="ErrorBrush" Color="{StaticResource Error}" />
     <SolidColorBrush x:Key="SuccessBrush" Color="{StaticResource Success}" />
@@ -152,11 +154,26 @@
          ═══════════════════════════════════════════════════════════ -->
 
     <!-- Primary Button (브랜드 노랑 + 다크 텍스트 — 카톡 패턴) -->
+    <!-- 키보드 포커스 표시(공통): 다크 화면에서 기본 점선이 안 보여 노란 2px 테두리로 통일 -->
+    <Style x:Key="AppFocusVisual">
+        <Setter Property="Control.Template">
+            <Setter.Value>
+                <ControlTemplate>
+                    <Rectangle Margin="-2" StrokeThickness="2" RadiusX="4" RadiusY="4"
+                               Stroke="{StaticResource BrandBrush}" SnapsToDevicePixels="True" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="PrimaryButton" TargetType="Button">
+        <Setter Property="FocusVisualStyle" Value="{StaticResource AppFocusVisual}" />
         <Setter Property="Background" Value="{StaticResource BrandBrush}" />
         <Setter Property="Foreground" Value="#FF1F2024" />
         <Setter Property="Height" Value="{StaticResource ButtonHeight}" />
         <Setter Property="MinWidth" Value="100" />
+        <!-- 템플릿이 Padding 을 반영하도록 — 긴 버튼 문구가 테두리에 붙거나 넘치지 않게 -->
+        <Setter Property="Padding" Value="12,0" />
         <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
         <Setter Property="FontSize" Value="{StaticResource FontButton}" />
         <Setter Property="FontWeight" Value="SemiBold" />
@@ -172,6 +189,7 @@
                                    FontFamily="{TemplateBinding FontFamily}"
                                    FontSize="{TemplateBinding FontSize}"
                                    FontWeight="{TemplateBinding FontWeight}"
+                                   Margin="{TemplateBinding Padding}"
                                    HorizontalAlignment="Center"
                                    VerticalAlignment="Center" />
                     </Border>
@@ -191,10 +209,12 @@
 
     <!-- Secondary Button (외곽선) -->
     <Style x:Key="SecondaryButton" TargetType="Button">
+        <Setter Property="FocusVisualStyle" Value="{StaticResource AppFocusVisual}" />
         <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
         <Setter Property="Height" Value="{StaticResource ButtonHeight}" />
         <Setter Property="MinWidth" Value="100" />
+        <Setter Property="Padding" Value="12,0" />
         <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
         <Setter Property="FontSize" Value="{StaticResource FontButton}" />
         <Setter Property="Cursor" Value="Hand" />
@@ -207,13 +227,16 @@
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
                             CornerRadius="{StaticResource CornerSmall}">
-                        <TextBlock Text="{TemplateBinding Content}"
-                                   Foreground="{TemplateBinding Foreground}"
-                                   FontFamily="{TemplateBinding FontFamily}"
-                                   FontSize="{TemplateBinding FontSize}"
-                                   FontWeight="{TemplateBinding FontWeight}"
-                                   HorizontalAlignment="Center"
-                                   VerticalAlignment="Center" />
+                        <!-- 문자열뿐 아니라 아이콘+글자 같은 복합 Content 도 그리도록 ContentPresenter 사용
+                             (예전 TextBlock Text 바인딩은 StackPanel Content 를 빈 버튼으로 그렸다) -->
+                        <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}"
+                                          TextElement.FontFamily="{TemplateBinding FontFamily}"
+                                          TextElement.FontSize="{TemplateBinding FontSize}"
+                                          TextElement.FontWeight="{TemplateBinding FontWeight}"
+                                          Margin="{TemplateBinding Padding}"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          RecognizesAccessKey="False" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
@@ -227,6 +250,7 @@
 
     <!-- TreeViewItem 행 전체 폭 + 다크 selected 배경 (#353A40) -->
     <Style x:Key="AppTreeViewItem" TargetType="TreeViewItem">
+        <Setter Property="FocusVisualStyle" Value="{StaticResource AppFocusVisual}" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
@@ -313,7 +337,9 @@
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Cursor" Value="Hand" />
-        <Setter Property="Focusable" Value="False" />
+        <!-- 예전엔 Focusable=False 라 Tab 키로 닿지 않았다. 키보드 사용자를 위해 포커스 허용 + 표시 -->
+        <Setter Property="Focusable" Value="True" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource AppFocusVisual}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
@@ -334,6 +360,7 @@
     <!-- 2026-09-17 추가 — 카드/팝업 안에서 목록 행처럼 보이는 전폭 버튼(멤버 팝업의
          "대화상대 초대하기"/"그룹 채팅 나가기" 등). 배경 없다가 hover 시에만 살짝 밝아짐. -->
     <Style x:Key="FlatListButton" TargetType="Button">
+        <Setter Property="FocusVisualStyle" Value="{StaticResource AppFocusVisual}" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="HorizontalAlignment" Value="Stretch" />
@@ -378,10 +405,27 @@
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
                             CornerRadius="{StaticResource CornerSmall}">
-                        <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
-                                      VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                        <Grid>
+                            <!-- 입력 힌트: Tag 에 문구를 넣으면 비어 있을 때 흐리게 보인다 -->
+                            <TextBlock x:Name="Hint"
+                                       Text="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
+                                       Margin="{TemplateBinding Padding}"
+                                       Padding="2,0,0,0"
+                                       VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       IsHitTestVisible="False"
+                                       Visibility="Collapsed" />
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                        </Grid>
                     </Border>
                     <ControlTemplate.Triggers>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="Text" Value="" />
+                            </MultiTrigger.Conditions>
+                            <Setter TargetName="Hint" Property="Visibility" Value="Visible" />
+                        </MultiTrigger>
                         <Trigger Property="IsKeyboardFocused" Value="True">
                             <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource BrandBrush}" />
                             <Setter TargetName="Bd" Property="BorderThickness" Value="1" />
@@ -547,6 +591,7 @@
 
     <!-- AppCheckBox: 브랜드 색 체크 표시, 13pt 라벨 -->
     <Style x:Key="AppCheckBox" TargetType="CheckBox">
+        <Setter Property="FocusVisualStyle" Value="{StaticResource AppFocusVisual}" />
         <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
         <Setter Property="FontSize" Value="{StaticResource FontBody}" />
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
@@ -594,6 +639,7 @@
 
     <!-- AppListBoxItem: 호버 / 선택 / 좌측 액센트 바 -->
     <Style x:Key="AppListBoxItem" TargetType="ListBoxItem">
+        <Setter Property="FocusVisualStyle" Value="{StaticResource AppFocusVisual}" />
         <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
         <Setter Property="FontSize" Value="{StaticResource FontBody}" />
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />

@@ -24,6 +24,8 @@ private val logger = LoggerFactory.getLogger("com.osori.server.MessageHandler")
 class MessageHandler(
     private val repo: MessageRepository?,
     private val sessions: SessionManager,
+    /** (uploadId, userId) → 그 사용자가 올린 업로드인지. null 이면 검사하지 않음(메모리 모드·옛 테스트). */
+    private val attachmentOwnedBy: ((String, String) -> Boolean)? = null,
 ) {
 
     suspend fun handleSend(session: ClientSession, sequence: Long, req: MessageSend) {
@@ -51,6 +53,11 @@ class MessageHandler(
         val sentAt = Instant.now()
         val sentAtMs = sentAt.toEpochMilli()
         val attachId = req.attachmentUploadId.ifEmpty { null }
+        // 첨부는 보낸 사람 본인이 올린 파일만 — 남의 업로드 ID 를 붙여 수신자에게 다운로드 권한을 넘기는 것을 막는다.
+        if (attachId != null && attachmentOwnedBy != null && !attachmentOwnedBy.invoke(attachId, userId)) {
+            sendSendAck(session, sequence, req.clientMessageId, "", 0, MessageSendAck.Result.INVALID_REQUEST, emptyList())
+            return
+        }
 
         val recipientResults = mutableListOf<MessageRecipientResult>()
         val deliverables = mutableListOf<String>()

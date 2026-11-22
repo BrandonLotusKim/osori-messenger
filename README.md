@@ -1,142 +1,90 @@
 # 오소리 메신저 (Osori Messenger)
 
-사내 메신저를 Kotlin 서버 + C# WPF 클라이언트로 처음부터 설계·구현한 개인 프로젝트.
+사내 메신저를 서버, 클라이언트, 통신 규약까지 처음부터 설계하고 구현한 개인 프로젝트입니다.
+서버는 Kotlin(Ktor), 클라이언트는 C#(.NET 8, WPF), 통신은 WebSocket 위의 Protobuf, 저장소는 PostgreSQL입니다.
 
-## 현재 상태
+![메인 화면](docs/images/main.png)
 
-**v0.1 출시 직전** — 기능 풀스택 완성 + 출시 패키지(인스톨러/로그/QA/운영문서) 완비. 사용자 1인 QA 단계 진입.
+| 대화 주고받기 | 그룹 방 파일 전송 |
+|---|---|
+| ![대화](docs/images/chat.gif) | ![그룹 방 파일 전송](docs/images/group_file.png) |
 
-| Phase / 마일스톤 | 상태 | 주요 결과물 |
-|---|---|---|
-| Phase 0~6 (서버 풀스택) | ✅ 완료 | Ktor WebSocket + PostgreSQL + 인증/TLS/Rate limit/Audit/Push |
-| C# 클라이언트 Phase D | ✅ 완료 | WPF dark+yellow 카톡식 UI, MainWindow 4 탭(조직도/대화/쪽지/설정), ConversationWindow, MemoCompose/Detail/Picker |
-| M1-E ** RoomHistory** | ✅ 완료 | 그룹채팅 히스토리 풀스택 — proto/handler/멤버체크/페이지네이션/WPF 무한스크롤 |
-| M2-F **쪽지** | ✅ 완료 | 9개 메시지 + 1:N 발송 + 오프라인 누적 flush + 받은/보낸함 + 읽음/삭제 + Smoke 9b |
-| M2 폴리시/172/203/211/129b/201) | ✅ 완료 | 다운로드 진행률 / 인앱 토스트 / 탭 슬라이드 / 폰트 fallback / 트레이 빨간점 / 메시지 등장 애니메이션 |
-| M3-A 인스톨러/241/242) | ✅ 완료 | Inno Setup `.iss` + `build-installer.bat` + 자동시작/제거 다이얼로그 |
-| M3-B 로그/진단/에러/251/252) | ✅ 완료 | logback 회전 10MB×5 / 진단 zip 내보내기 / 글로벌 에러 boundary + crash.log |
-| M3-C QA 시나리오 | ✅ 완료 | `QA_Checklist_v0.1.md` 60+ 시나리오 |
-| M3-E 운영 인프라 | ✅ 완료 | Docker compose prod + TLS 가이드 + pgbackup sidecar + GUIDE §10 |
-| M3-D 잡버그 | ⏳ 사용자 1인 QA 결과 대기 | |
+## 주요 기능
 
-**테스트 현황** (모두 통과):
-- Kotlin 통합 13/13 + RoomRepo 8/8 + 기타 단위/통합 합산 200+
-- C# Core 62/62
-- Smoke E2E **10/10** — 로그인 / 송수신 / 오프라인큐 / 자동재연결 / 파일 / 조직도 / 방생성 / 메시지검색 / **쪽지 9** / **방히스토리 9b**
-- WPF 빌드 0 에러
+- 1:1·그룹 대화: 방 만들기, 초대, 나가기, 이름 변경, 대화 기록, 연속 메시지 묶기
+- 읽음 표시: 내가 보낸 메시지 옆에 안 읽은 인원, 모두 읽으면 "읽음"
+- 파일 전송: 1:1·그룹 방, 방 멤버 전원에게 알림, 대화 기록에서 나중에 받기
+- 쪽지: 여러 명에게 보내기(받는 사람 칩), 첨부, 답장·전체회신·전달
+- 조직도: 부서 트리, 접속 표시, 이름 검색, 여러 명 골라 대화·쪽지
+- 대화 검색, 중복 로그인 안내, 자동 재접속, 오프라인 메시지 전달
 
-## 빠른 시작
+## 구조
 
-### 개발용 (호스트에서 서버 직접 기동)
+```mermaid
+flowchart LR
+  C["C# WPF 클라이언트<br/>Core(통신) / Wpf(화면)"] -- "Protobuf over WebSocket (TLS)" --> G["Kotlin Ktor 서버<br/>접속 게이트웨이 → 세션 허브"]
+  G --> DB[("PostgreSQL 16<br/>계정 · 메시지 · 감사")]
+  G --> F["파일 저장소"]
+```
 
-`powershell
-# 1) DB만 docker 로 띄움
+## 설계 결정
+
+| 결정 | 이유 |
+|---|---|
+| Protobuf 봉투(Envelope) 하나로 모든 메시지 전송 | 기능이 늘어도 규약은 하나. 스키마에서 서버·클라이언트 코드를 함께 생성해 양쪽 형식이 어긋나지 않음 |
+| PostgreSQL 하나, 영역별 테이블 분리 | 여러 DBMS를 동시에 지원하는 대신 하나로 정하고, 메시지와 감사 기록의 보관 정책을 따로 적용 |
+| 비밀번호 Argon2id, 통신 TLS | 로그인 허용 계정 검사와 요청 횟수 제한을 서버 공통 단계에서 처리 |
+| 재접속 간격 증가, 클라이언트 메시지 ID | 끊겨도 같은 메시지가 두 번 저장되지 않음 |
+| 클라이언트를 Core / Wpf 로 분리 | 통신·상태 로직을 화면 없이 단위 테스트 |
+
+## 품질
+
+- 자동 테스트: 서버 258개(DB·WebSocket 통합 테스트 포함), 클라이언트 127개
+- GitHub Actions CI: 서버(PostgreSQL 컨테이너 포함)·클라이언트 빌드와 테스트
+- 운영 구성: Docker Compose, DB 백업, 로그 회전, 설치 프로그램(Inno Setup)
+
+## 실행 방법
+
+필요한 것: JDK 17, .NET 8 SDK, Docker(또는 PostgreSQL 16)
+
+```powershell
+# 1) DB (schema.sql 이 첫 기동 때 자동 적용됨)
 docker compose -f docker/docker-compose.yml up -d
 
-# 2) 서버 기동
-$env:JAVA_HOME = "<repo>\.tools\jdk-17.0.12+7"
-cd <repo>\OsoriMessenger\server
+# 2) 개발용 계정 만들기 (admin, test1~test10 / 비밀번호 1234)
+cd server
+.\gradlew.bat seedAllowedAccounts
+
+# 3) 서버 (클라이언트 기본 포트 7071)
+$env:OSORI_PORT = "7071"
 .\gradlew.bat run
 
-# 3) WPF 클라이언트
-cd <repo>\OsoriMessenger\client-csharp\src\OsoriClient.Wpf
-& "C:\Program Files\dotnet\dotnet.exe" run
-`
+# 4) 클라이언트 (새 터미널)
+cd ..\client-csharp\src\OsoriClient.Wpf
+dotnet run
+```
 
-### 운영 (전체 스택 컨테이너)
+테스트:
 
-`bash
-cp docker/.env.example docker/.env   # 비밀번호/TLS 등 채우기
-docker compose -f docker/docker-compose.prod.yml --env-file docker/.env up -d
-`
+```powershell
+cd server; .\gradlew.bat test
+cd ..\client-csharp; dotnet test src\OsoriClient.Core.Tests
+```
 
-상세는 [`docker/README.md`](./docker/README.md).
+> 개발용 계정과 비밀번호(1234)는 로컬 확인용입니다. 운영 환경에서는 쓰지 않습니다.
+> 이미 만든 DB에 새 버전을 올릴 때는 `server/src/main/resources/db/migrations/` 의 파일을 순서대로 적용합니다.
 
-### Smoke E2E
+## 폴더
 
-`powershell
-cd <repo>\OsoriMessenger\client-csharp
-& "C:\Program Files\dotnet\dotnet.exe" run --project src\OsoriClient.SmokeTest
-`
-
-### 인스톨러 빌드 (Windows 사용자 배포용 .exe)
-
-`cmd
-cd installer
-build-installer.bat
-`
-
-상세는 [`installer/README.md`](./installer/README.md).
-
-## 파일 안내
-
-| 파일 / 디렉토리 | 역할 |
+| 경로 | 내용 |
 |---|---|
-| [`PLAN.md`](./PLAN.md) | 전체 계획, 아키텍처 결정, 기술 스택, 단계별 로드맵 |
-| [`PROTOCOL.md`](./PROTOCOL.md) | **와이어 프로토콜 사양서** — 21개 메시지(§13 RoomHistory + §14 Memo 포함) |
-| [`GUIDE.md`](./GUIDE.md) | 운영자 가이드 — 환경변수, DB 스키마, JSON 로그, TLS keystore, 진단 수집, 흔한 장애 대응 (§10) |
-| [`HOW_TO_RUN.md`](./HOW_TO_RUN.md) | 최소 기동 절차 |
-| [`_Progress.md`](./_Progress.md) | **SSOT**. 단계별 체크리스트 + OC-NNN 태스크 로그 |
-| [`_Roadmap_v0.1.md`](./_Roadmap_v0.1.md) | v0.1 출시 84 OC 트래커 |
-| [`QA_Checklist_v0.1.md`](./QA_Checklist_v0.1.md) | 1인 QA 60+ 시나리오 |
-| [`ANNOUNCE_v0.1.md`](./ANNOUNCE_v0.1.md) | 출시 시점 1-pager 안내 (운영자/관리자 배포용) |
-| [`RELEASE_NOTES_v0.1.md`](./RELEASE_NOTES_v0.1.md) | v0.1 출시 노트 상세 |
-| [`CHANGELOG.md`](./CHANGELOG.md) | 변경 이력 (Keep a Changelog 형식) |
-| [`_Roadmap_v0.2.md`](./_Roadmap_v0.2.md) | v0.2 백로그 (A~H 영역) |
-| [`server/`](./server/) | Kotlin + Ktor 서버 |
-| [`client-csharp/`](./client-csharp/) | C# .NET 8 WPF 클라이언트 + Core 라이브러리 + SmokeTest |
-| [`proto/`](./proto/) | Protobuf 스키마 (서버/클라 공유) |
-| [`docker/`](./docker/) | dev compose + prod compose + Dockerfile + TLS 가이드 + pgbackup |
-| [`installer/`](./installer/) | Inno Setup `.iss` + 빌드 자동화 |
-| [`db/`](./db/) | schema.sql 등 DB 관련 |
+| `server/` | Kotlin Ktor 서버, DB 스키마·마이그레이션, 테스트 |
+| `client-csharp/` | WPF 클라이언트(Core·Wpf·테스트) |
+| `proto/` | 통신 규약(messenger.proto) |
+| `docker/` | 개발·운영용 Compose, TLS 가이드 |
+| `installer/` | 클라이언트 설치 프로그램 |
+| `PROTOCOL.md` | 메시지 종류와 흐름 설명 |
 
-## 작업 재개 방법
+## 라이선스
 
-
-## 기술 스택
-
-| 영역 | 선택 |
-|---|---|
-| **서버 언어** | Kotlin 1.9 |
-| **서버 프레임워크** | Ktor 2.x WebSocket + Coroutines |
-| **와이어 프로토콜** | Protobuf 3 over WebSocket (ws / wss) |
-| **DB** | PostgreSQL 16 |
-| **인증** | Argon2id (OWASP 2024, OPEN/STRICT 모드) |
-| **TLS** | TLS 1.3, JKS keystore (개발 자체 서명 / 운영 Let's Encrypt) |
-| **로깅** | logback + logstash JSON + 회전 10MB×5 |
-| **Rate limit** | per-user 토큰 버킷 |
-| **클라이언트 언어** | C# .NET 8 |
-| **클라이언트 UI** | WPF (Windows 전용) |
-| **배포** | Inno Setup `.exe` 인스톨러 + Docker compose 운영 프로필 |
-
-## v0.1 주요 기능
-
-**메시징**
-- 1:1 메시지 송수신 (Heartbeat ACK / 유휴 리퍼 90s / Presence 브로드캐스트)
-- 그룹 채팅 (방 생성/참여/메시지 + **방 히스토리 페이지네이션**)
-- **쪽지 (Memo)** — 1:N 발송 / 받은·보낸쪽지함 / 읽음·삭제 / 오프라인 누적 자동 flush / 첨부파일 / **답장·전체회신·전달**(클라 전용 프리필, 2026-09 추가)
-- 파일 송수신 (chunk 업로드/다운로드, **진행률 실시간 표시**)
-- 메시지 본문 검색
-
-**클라이언트 UI (WPF)**
-- 카톡식 dark + yellow 테마 + 커스텀 타이틀바 (WindowChrome)
-- 4 탭 사이드바 (조직도/대화/쪽지/설정), 탭 전환 액센트 바 슬라이드
-- 조직도 우클릭 → "대화 시작" / "쪽지 보내기" 컨텍스트 메뉴
-- 인앱 토스트 시스템 (Info/Success/Warn/Error 4 레벨, fade-in/out)
-- 트레이 아이콘 + 미열독 시 **빨간 점** 오버레이 + ToolTip 카운트
-- 그룹 채팅 무한스크롤 (맨위 도달 시 옛 메시지 추가 로드)
-- 새 메시지 등장 fade + slide 애니메이션
-
-**신뢰성 / 운영**
-- 오프라인 outbox + 재접속 시 자동 flush (1:1/쪽지 둘 다)
-- 자동 재연결 (지수 백오프 1s → 30s, 최대 10회)
-- 멱등 `client_msg_id` 캐시
-- per-user 토큰 버킷 rate limit — **2026-09-11 부터 표준 기동 스크립트 기본 활성화** (`GUIDE.md` §7)
-- **클라이언트 자동업데이트** — `/client/version` + `/client/download`, 로그인 직후 자동 확인 (2026-09-11 추가, `GUIDE.md` §10.4a)
-- TLS 1.3 wss
-- **글로벌 에러 boundary** — UI/Domain/Task 3종 핸들러 + `crash.log`
-- **진단 로그 zip 내보내기** — 설정 탭에서 사용자가 한 번에 압축 → 운영자에게 전달
-- **logback 회전** — 10MB × 5개, gz 압축, 총 60MB 상한
-- **Docker compose 운영 프로필** — Postgres + server + pgbackup sidecar
-- **인스톨러** — Inno Setup, 자동시작/제거 다이얼로그, in-place upgrade
-
+MIT

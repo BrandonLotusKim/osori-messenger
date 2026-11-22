@@ -680,4 +680,39 @@ class WebSocketHandlerIntegrationTest {
             }
         }
     }
+
+    @Test
+    fun `요청 제한 활성 시 쪽지 연속 발송은 RATE_LIMITED 로 응답된다 (공통 인터셉터 배선)`() = testApplication {
+        // 1:1 전송 외 요청도 configureServer 의 rateLimitPolicy 로 제한되는지 — Main 배선 + WebSocketHandler 인터셉터.
+        application {
+            configureServer(
+                userRepository = null,
+                talkRepository = null,
+                rateLimitPolicy = com.osori.server.talk.RateLimitPolicy.PerUserTokenBucket(capacity = 2, refillPerSecond = 0.001),
+            )
+        }
+        val client = createClient { install(ClientWebSockets) }
+        client.webSocket("/ws") {
+            send(Frame.Binary(true, Envelope.newBuilder().setSequence(1).setLoginReq(
+                LoginRequest.newBuilder().setUserId("test1").setDeviceId("itest-rl").setClientVersion("itest").build()
+            ).build().toByteArray()))
+            assertEquals(Envelope.PayloadCase.LOGIN_RES, receiveEnvelope().payloadCase)
+
+            val results = mutableListOf<com.osori.proto.v1.MessageSendAck.Result>()
+            for (seq in 2L..4L) {
+                send(Frame.Binary(true, Envelope.newBuilder().setSequence(seq).setMessageSend(
+                    com.osori.proto.v1.MessageSend.newBuilder().setClientMessageId("m$seq").setTitle("t").setBody("b").build()
+                ).build().toByteArray()))
+                var env = withTimeout(3_000) { receiveEnvelope() }
+                while (env.payloadCase != Envelope.PayloadCase.MESSAGE_SEND_ACK) env = withTimeout(3_000) { receiveEnvelope() }
+                assertEquals(seq, env.sequence)
+                results += env.messageSendAck.result
+            }
+            // 앞의 2건은 핸들러까지 가서 INVALID_REQUEST(수신자 없음), 3번째는 인터셉터에서 RATE_LIMITED
+            assertEquals(com.osori.proto.v1.MessageSendAck.Result.INVALID_REQUEST, results[0])
+            assertEquals(com.osori.proto.v1.MessageSendAck.Result.INVALID_REQUEST, results[1])
+            assertEquals(com.osori.proto.v1.MessageSendAck.Result.RATE_LIMITED, results[2])
+            close(CloseReason(CloseReason.Codes.NORMAL, "done"))
+        }
+    }
 }

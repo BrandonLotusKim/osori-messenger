@@ -46,9 +46,6 @@ Sample/*.SQL
 Sample/_Analysis/
 # 분석 산출물도 한글 COMMENT 에 업무 정보 포함 가능성 있어 함께 제외
 
-# ---- Codex 협업용 로컬 프롬프트 ----
-.codex_prompts/
-.codex_logs/
 
 # ---- 서버 런타임 데이터 (업로드 파일/로컬 스토리지) ----
 server/storage/

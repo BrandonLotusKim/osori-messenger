@@ -96,6 +96,29 @@ open class AuditRepository(private val db: Database) {
         record("room.created", actorUserId = ownerUserId, target = roomId,
             payloadJson = """{"roomId":"${jsonEscape(roomId)}","name":"${jsonEscape(name)}"}""")
 
+    /** 같은 계정의 새 로그인으로 기존 세션이 끊김. target = 끊긴 세션 ID. */
+    open fun recordSessionSuperseded(userId: String, oldSessionId: String, newSessionId: String) =
+        record("auth.session.superseded", actorUserId = userId, target = oldSessionId,
+            payloadJson = """{"oldSessionId":"${jsonEscape(oldSessionId)}","newSessionId":"${jsonEscape(newSessionId)}"}""")
+
+    // 대화방 이벤트 — 메시지 본문·방 이름 외 개인 내용은 남기지 않는다(메시지는 ID 와 크기만).
+
+    open fun recordRoomMessageSent(fromUserId: String, roomId: String, messageId: String, bytes: Int, recipients: Int) =
+        record("room.msg.sent", actorUserId = fromUserId, target = messageId,
+            payloadJson = """{"roomId":"${jsonEscape(roomId)}","messageId":"${jsonEscape(messageId)}","bytes":$bytes,"recipients":$recipients}""")
+
+    open fun recordRoomInvited(actorUserId: String, roomId: String, invitedUserIds: List<String>) =
+        record("room.invited", actorUserId = actorUserId, target = roomId,
+            payloadJson = """{"roomId":"${jsonEscape(roomId)}","invited":[${invitedUserIds.joinToString(",") { "\"${jsonEscape(it)}\"" }}]}""")
+
+    open fun recordRoomRenamed(actorUserId: String, roomId: String, newName: String) =
+        record("room.renamed", actorUserId = actorUserId, target = roomId,
+            payloadJson = """{"roomId":"${jsonEscape(roomId)}","name":"${jsonEscape(newName)}"}""")
+
+    open fun recordRoomLeft(userId: String, roomId: String, roomDeleted: Boolean) =
+        record("room.left", actorUserId = userId, target = roomId,
+            payloadJson = """{"roomId":"${jsonEscape(roomId)}","roomDeleted":$roomDeleted}""")
+
     // ─────────── 조회 (테스트·운영 도구용) ───────────
 
     open fun count(): Long = db.withConnection { conn ->

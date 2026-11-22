@@ -10,9 +10,9 @@
 ## 2. 스키마 파일
 
 권위 있는 스키마 정의 위치:
-`
+```
 <repo>\OsoriMessenger\server\src\main\resources\db\schema.sql
-`
+```
 
 이 파일은 **"현재 최신 스냅샷"** 만 표현한다. 새 DB 에 한 번에 적용 가능한 상태만 유지한다.
 마이그레이션 도구(Flyway 등)를 도입하기 전까지는 이 파일을 단일 소스로 취급한다.
@@ -39,10 +39,10 @@
 
 ## 4. 로컬 기동 (Docker)
 
-`bash
+```bash
 cd <repo>\OsoriMessenger
 docker compose -f docker/docker-compose.yml up -d
-`
+```
 
 컨테이너 최초 기동 시 `docker-entrypoint-initdb.d` 훅으로 `schema.sql` 이 자동 적용된다.
 
@@ -57,17 +57,17 @@ docker compose -f docker/docker-compose.yml up -d
 | JDBC URL | `jdbc:postgresql://localhost:5432/osori` |
 
 ### 재초기화 (볼륨 삭제 후 재기동)
-`bash
+```bash
 docker compose -f docker/docker-compose.yml down -v
 docker compose -f docker/docker-compose.yml up -d
-`
+```
 
 ## 5. 수동 스키마 적용
 
 Docker 를 쓰지 않고 기존 Postgres 인스턴스에 직접 적용하려면:
-`bash
+```bash
 psql -h localhost -U osori -d osori -f server/src/main/resources/db/schema.sql
-`
+```
 
 ## 6. 서버 DB 연결 환경변수
 

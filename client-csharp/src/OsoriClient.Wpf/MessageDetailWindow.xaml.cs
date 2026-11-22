@@ -161,9 +161,7 @@ public partial class MessageDetailWindow : Window
 
     private async void DeleteButton_OnClick(object sender, RoutedEventArgs e)
     {
-        var confirm = MessageBox.Show(this, "이 쪽지를 삭제하시겠습니까?", "쪽지 삭제",
-            MessageBoxButton.OKCancel, MessageBoxImage.Question);
-        if (confirm != MessageBoxResult.OK) return;
+        if (!AppDialog.Confirm(this, "이 쪽지를 삭제하시겠습니까?", "쪽지 삭제", yes: "삭제", no: "취소")) return;
 
         DeleteButton.IsEnabled = false;
         try

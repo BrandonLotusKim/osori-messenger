@@ -172,4 +172,20 @@ public sealed partial class MessengerClient
         var response = await SendRequestAsync(envelope, Envelope.PayloadOneofCase.TalkRoomHistoryRes, ct);
         return response.TalkRoomHistoryRes;
     }
+
+    /// <summary>
+    /// 읽음 보고 — 이 방을 lastReadTs(서버 시각, ms) 까지 읽었다. 응답 없는 단방향 전송이며 실패해도 무시한다
+    /// (다음 보고 때 더 큰 값으로 다시 맞춰진다).
+    /// </summary>
+    public async Task ReportRoomReadAsync(string roomId, long lastReadTs, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(roomId) || lastReadTs <= 0) return;
+        var envelope = new Envelope
+        {
+            Sequence = (ulong)Interlocked.Increment(ref _sequence),
+            TalkRoomReadReport = new TalkRoomReadReport { RoomId = roomId, LastReadTs = lastReadTs },
+        };
+        try { await SendAsync(envelope, ct); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[read] report failed: {ex.Message}"); }
+    }
 }

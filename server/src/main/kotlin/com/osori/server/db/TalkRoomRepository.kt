@@ -284,13 +284,14 @@ open class TalkRoomRepository(private val db: Database) {
         fromUserId: String,
         text: String,
         serverTs: Instant,
+        serverTalkId: UUID = UUID.randomUUID(),
+        attachmentUploadId: String? = null,
     ): UUID {
-        val serverTalkId = UUID.randomUUID()
         db.withConnection { conn ->
             conn.prepareStatement(
                 """
-                INSERT INTO talk_room_messages (server_talk_id, room_id, from_user_id, text, server_ts)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO talk_room_messages (server_talk_id, room_id, from_user_id, text, server_ts, attachment_upload_id)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """.trimIndent(),
             ).use { ps ->
                 ps.setObject(1, serverTalkId)
@@ -298,6 +299,7 @@ open class TalkRoomRepository(private val db: Database) {
                 ps.setString(3, fromUserId)
                 ps.setString(4, text)
                 ps.setTimestamp(5, Timestamp.from(serverTs))
+                ps.setString(6, attachmentUploadId)
                 ps.executeUpdate()
             }
         }
@@ -321,9 +323,9 @@ open class TalkRoomRepository(private val db: Database) {
         db.withConnection { conn ->
             conn.prepareStatement(
                 """
-                SELECT server_talk_id, room_id, from_user_id, text, server_ts
+                SELECT server_talk_id, room_id, from_user_id, text, server_ts, attachment_upload_id
                 FROM (
-                    SELECT server_talk_id, room_id, from_user_id, text, server_ts
+                    SELECT server_talk_id, room_id, from_user_id, text, server_ts, attachment_upload_id
                     FROM talk_room_messages
                     WHERE room_id = ? AND server_ts > ?
                     ORDER BY server_ts DESC
@@ -344,6 +346,7 @@ open class TalkRoomRepository(private val db: Database) {
                             fromUserId = rs.getString(3),
                             text = rs.getString(4),
                             serverTs = rs.getTimestamp(5).toInstant(),
+                            attachmentUploadId = rs.getString(6),
                         )
                     }
                     result
@@ -351,13 +354,123 @@ open class TalkRoomRepository(private val db: Database) {
             }
         }
 
+    data class RoomSearchRow(
+        val serverTalkId: UUID,
+        val roomId: UUID,
+        val roomName: String,
+        val nameIsCustom: Boolean,
+        val memberIds: List<String>,
+        val fromUserId: String,
+        val text: String,
+        val serverTs: Instant,
+    )
+
+    /**
+     * 대화방 메시지 본문 검색 — userId 가 "현재" 멤버인 방의 메시지만(나간 방·남의 방 제외).
+     * ILIKE 부분 일치, sinceMillis/untilMillis = 0 이면 제한 없음, 최신순.
+     * 데이터가 커지면 `CREATE EXTENSION pg_trgm` + `text gin_trgm_ops` 인덱스로 ILIKE 를 가속할 수 있다
+     * (30인 규모에서는 room_id 인덱스 + 멤버 조인으로 충분해 기본 스키마에는 넣지 않음).
+     */
+    open fun searchRoomTalks(
+        userId: String,
+        keyword: String,
+        sinceMillis: Long,
+        untilMillis: Long,
+        limit: Int,
+    ): List<RoomSearchRow> = db.withConnection { conn ->
+        val pattern = "%${keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")}%"
+        val sinceClause = if (sinceMillis > 0) "AND t.server_ts >= ? " else ""
+        val untilClause = if (untilMillis > 0) "AND t.server_ts <= ? " else ""
+        val sql = """
+            SELECT t.server_talk_id, t.room_id, r.name, r.name_is_custom,
+                   (SELECT array_agg(m2.user_id ORDER BY m2.joined_at, m2.user_id) FROM talk_room_members m2 WHERE m2.room_id = t.room_id) AS member_ids,
+                   t.from_user_id, t.text, t.server_ts
+            FROM talk_room_messages t
+            JOIN talk_room_members m ON m.room_id = t.room_id AND m.user_id = ?
+            JOIN talk_rooms r ON r.room_id = t.room_id
+            WHERE t.text ILIKE ? ESCAPE '\'
+              $sinceClause
+              $untilClause
+            ORDER BY t.server_ts DESC
+            LIMIT ?
+            """.trimIndent()
+        conn.prepareStatement(sql).use { ps ->
+            var idx = 1
+            ps.setString(idx++, userId)
+            ps.setString(idx++, pattern)
+            if (sinceMillis > 0) ps.setTimestamp(idx++, Timestamp.from(Instant.ofEpochMilli(sinceMillis)))
+            if (untilMillis > 0) ps.setTimestamp(idx++, Timestamp.from(Instant.ofEpochMilli(untilMillis)))
+            ps.setInt(idx, limit)
+            ps.executeQuery().use { rs ->
+                val result = mutableListOf<RoomSearchRow>()
+                while (rs.next()) {
+                    @Suppress("UNCHECKED_CAST")
+                    val memberIds = (rs.getArray("member_ids")?.array as? Array<String>)?.toList() ?: emptyList()
+                    result += RoomSearchRow(
+                        serverTalkId = rs.getObject(1) as UUID,
+                        roomId = rs.getObject(2) as UUID,
+                        roomName = rs.getString(3),
+                        nameIsCustom = rs.getBoolean(4),
+                        memberIds = memberIds,
+                        fromUserId = rs.getString(6),
+                        text = rs.getString(7),
+                        serverTs = rs.getTimestamp(8).toInstant(),
+                    )
+                }
+                result
+            }
+        }
+    }
+
     data class TalkRoomRow(
         val serverTalkId: UUID,
         val roomId: UUID,
         val fromUserId: String,
         val text: String,
         val serverTs: Instant,
+        val attachmentUploadId: String? = null,
     )
+
+    /**
+     * 읽음 위치를 앞으로만 옮긴다(더 과거 값이 오면 무시). 실제로 바뀌었으면 true.
+     */
+    open fun advanceLastRead(roomId: UUID, userId: String, lastRead: Instant): Boolean =
+        db.withConnection { conn ->
+            conn.prepareStatement(
+                """
+                INSERT INTO talk_room_reads (room_id, user_id, last_read_ts)
+                VALUES (?, ?, ?)
+                ON CONFLICT (room_id, user_id) DO UPDATE
+                    SET last_read_ts = EXCLUDED.last_read_ts
+                    WHERE talk_room_reads.last_read_ts < EXCLUDED.last_read_ts
+                """.trimIndent(),
+            ).use { ps ->
+                ps.setObject(1, roomId)
+                ps.setString(2, userId)
+                ps.setTimestamp(3, Timestamp.from(lastRead))
+                ps.executeUpdate() > 0
+            }
+        }
+
+    /** 현재 멤버들의 읽음 위치(기록 없는 멤버는 빠짐). */
+    open fun listReadStates(roomId: UUID): Map<String, Instant> =
+        db.withConnection { conn ->
+            conn.prepareStatement(
+                """
+                SELECT r.user_id, r.last_read_ts
+                FROM talk_room_reads r
+                JOIN talk_room_members m ON m.room_id = r.room_id AND m.user_id = r.user_id
+                WHERE r.room_id = ?
+                """.trimIndent(),
+            ).use { ps ->
+                ps.setObject(1, roomId)
+                ps.executeQuery().use { rs ->
+                    val out = linkedMapOf<String, Instant>()
+                    while (rs.next()) out[rs.getString(1)] = rs.getTimestamp(2).toInstant()
+                    out
+                }
+            }
+        }
 
     fun countRoomTalks(roomId: UUID): Long {
         return db.withConnection { conn ->

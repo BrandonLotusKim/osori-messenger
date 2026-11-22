@@ -109,6 +109,27 @@ class LoginHandlerTest {
     }
 
     @Test
+    fun `duplicate login sends SUPERSEDED notice to previous session before closing`() = runBlocking {
+        val sessions = SessionManager()
+        val handler = LoginHandler(sessions, userRepository = null)
+        val first = FakeClientSession()
+        val second = FakeClientSession()
+
+        handler.handleLogin(first, sequence = 10, loginReq("test1"))
+        val framesBefore = first.sentFrames.size
+        handler.handleLogin(second, sequence = 11, loginReq("test1"))
+
+        // 로그인 응답 이후 기존 세션에 추가로 간 프레임 = SessionClosed(SUPERSEDED) 1건
+        val extra = first.sentFrames.drop(framesBefore).map { it.asEnvelope() }
+        val notice = extra.single { it.payloadCase == Envelope.PayloadCase.SESSION_CLOSED }
+        assertEquals(com.osori.proto.v1.SessionClosed.Reason.SUPERSEDED, notice.sessionClosed.reason)
+        assertTrue(notice.sessionClosed.message.isNotBlank())
+        assertTrue(first.closed)
+        // 새 세션에는 종료 통지가 가지 않는다
+        assertTrue(second.sentFrames.map { it.asEnvelope() }.none { it.payloadCase == Envelope.PayloadCase.SESSION_CLOSED })
+    }
+
+    @Test
     fun `duplicate login closes previous session and binds new`() = runBlocking {
         val sessions = SessionManager()
         val handler = LoginHandler(sessions, userRepository = null)

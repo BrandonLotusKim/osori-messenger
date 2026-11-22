@@ -67,10 +67,27 @@ public partial class MessageRecipientPicker : Window
         };
     }
 
+    private string _noneText = "선택된 수신자 없음";
+    private bool _requireSelection;
+
+    /// <summary>
+    /// 같은 선택기를 다른 용도(새 대화 상대 고르기 등)로 쓸 때 제목·확인 버튼·안내 문구를 바꾼다.
+    /// </summary>
+    public void SetPurpose(string title, string okText, string noneText)
+    {
+        Title = title;
+        HeaderTitleText.Text = title;
+        OkButton.Content = okText;
+        _noneText = noneText;
+        _requireSelection = true; // 이 용도에선 한 명 이상 골라야 확인 가능
+        UpdateSelectedCount();
+    }
+
     private void UpdateSelectedCount()
     {
         var n = _all.Count(m => m.IsChecked);
-        SelectedCountText.Text = n == 0 ? "선택된 수신자 없음" : $"선택 {n}명";
+        SelectedCountText.Text = n == 0 ? _noneText : $"선택 {n}명";
+        if (OkButton is not null) OkButton.IsEnabled = n > 0 || !_requireSelection;
     }
 
     private void FilterBox_OnTextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
@@ -94,6 +111,7 @@ public partial class MessageRecipientPicker : Window
 
     private void OkButton_OnClick(object sender, RoutedEventArgs e)
     {
+        if (_requireSelection && !_all.Any(m => m.IsChecked)) return; // Ctrl+Enter 경로도 같은 조건
         DialogResult = true;
         Close();
     }

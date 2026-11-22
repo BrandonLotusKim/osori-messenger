@@ -250,4 +250,38 @@ class TalkRoomRepositoryIntegrationTest {
         val eight = listOf("alice", "bob", "carol", "dave", "eve", "frank", "grace", "heidi")
         assertEquals("bob 외 7명", TalkRoomRepository.computeAutoRoomName(eight, "alice"))
     }
+
+    @Test
+    fun `searchRoomTalks finds only rooms the user currently belongs to`() {
+        val t0 = Instant.now()
+        val ab = repo.createRoom("alice, bob", "alice", t0, listOf("bob"))
+        val bc = repo.createRoom("bob, carol", "bob", t0, listOf("carol"))
+        repo.insertRoomTalk(ab, "bob", "내일 배포 일정 공유합니다", t0.plusSeconds(1))
+        repo.insertRoomTalk(ab, "alice", "점심 뭐 먹죠", t0.plusSeconds(2))
+        repo.insertRoomTalk(bc, "carol", "배포는 carol 방에서만", t0.plusSeconds(3))
+
+        val hits = repo.searchRoomTalks("alice", "배포", 0, 0, 10)
+        assertEquals(1, hits.size)
+        assertEquals(ab, hits[0].roomId)
+        assertEquals("bob", hits[0].fromUserId)
+        assertEquals(setOf("alice", "bob"), hits[0].memberIds.toSet())
+
+        // 대소문자 무시 + 특수문자(%) 는 문자 그대로
+        repo.insertRoomTalk(ab, "bob", "Release 100% done", t0.plusSeconds(4))
+        assertEquals(1, repo.searchRoomTalks("alice", "release 100%", 0, 0, 10).size)
+        assertEquals(0, repo.searchRoomTalks("alice", "%%", 0, 0, 10).size)
+
+        // 나가면 그 방 메시지는 더 이상 검색되지 않는다
+        repo.removeMember(ab, "alice")
+        assertEquals(0, repo.searchRoomTalks("alice", "배포", 0, 0, 10).size)
+    }
+
+    @Test
+    fun `searchRoomTalks orders newest first and honors limit`() {
+        val t0 = Instant.now()
+        val ab = repo.createRoom("alice, bob", "alice", t0, listOf("bob"))
+        (1..5).forEach { repo.insertRoomTalk(ab, "bob", "공지 $it", t0.plusSeconds(it.toLong())) }
+        val hits = repo.searchRoomTalks("bob", "공지", 0, 0, 3)
+        assertEquals(listOf("공지 5", "공지 4", "공지 3"), hits.map { it.text })
+    }
 }

@@ -55,6 +55,32 @@ public sealed class OrgTreeNode : INotifyPropertyChanged
         }
     }
 
+    // 멤버 접속 상태(서버 PresenceEvent 반영). 클라이언트 UI 상태.
+    private bool _isOnline;
+    public bool IsOnline
+    {
+        get => _isOnline;
+        set
+        {
+            if (_isOnline == value) return;
+            _isOnline = value;
+            OnPropertyChanged();
+        }
+    }
+
+    // 트리 펼침 상태(TreeViewItem.IsExpanded 와 양방향 바인딩). 필터 결과는 펼친 채로 만든다.
+    private bool _isExpanded;
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set
+        {
+            if (_isExpanded == value) return;
+            _isExpanded = value;
+            OnPropertyChanged();
+        }
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>

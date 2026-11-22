@@ -57,6 +57,7 @@ open class Database(val dataSource: DataSource) {
             "auth_users",
             "talk_messages", "talk_outbox",
             "talk_rooms", "talk_room_members", "talk_room_messages",
+            "talk_room_reads", // v12
             "file_uploads",
             "org_units", "org_members",
             "log_events", "push_tokens",

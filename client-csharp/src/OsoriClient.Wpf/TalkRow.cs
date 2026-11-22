@@ -70,6 +70,9 @@ public sealed class TalkRow : INotifyPropertyChanged
 
     public bool HasUnread => _unreadCount > 0;
 
+    /// <summary>목록 두 번째 줄 표시용 — 메시지가 없으면 기본 문구로 두 줄 구조를 유지한다.</summary>
+    public string PreviewText => string.IsNullOrEmpty(_lastMessagePreview) ? "아직 메시지가 없습니다" : _lastMessagePreview;
+
     public string LastMessagePreview
     {
         get => _lastMessagePreview;
@@ -82,6 +85,7 @@ public sealed class TalkRow : INotifyPropertyChanged
 
             _lastMessagePreview = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(PreviewText));
         }
     }
 

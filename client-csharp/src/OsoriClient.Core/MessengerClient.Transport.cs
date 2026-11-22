@@ -88,6 +88,12 @@ public sealed partial class MessengerClient
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
                         closedByPeer = true;
+                        // 구버전 서버(종료 통지 메시지 없음)도 종료 설명으로 중복 로그인을 알 수 있다.
+                        if (ReferenceEquals(socket, _socket)
+                            && IsSupersededSignal(null, result.CloseStatusDescription ?? socket.CloseStatusDescription))
+                        {
+                            MarkSuperseded(null);
+                        }
                         break;
                     }
 
@@ -133,6 +139,12 @@ public sealed partial class MessengerClient
         }
     }
 
+    /// <summary>테스트용 — 서버 프레임 수신을 흉내 낸다.</summary>
+    internal Task DispatchForTestAsync(Envelope envelope) => DispatchEnvelopeAsync(envelope);
+
+    /// <summary>테스트용 — 현재 상태에서 자동 재접속을 시도할지.</summary>
+    internal bool ShouldAttemptReconnectForTest() => ShouldAttemptReconnect(_socket);
+
     private Task DispatchEnvelopeAsync(Envelope envelope)
     {
         var sequence = unchecked((long)envelope.Sequence);
@@ -148,6 +160,20 @@ public sealed partial class MessengerClient
             return Task.CompletedTask;
         }
 
+        if (envelope.PayloadCase == Envelope.PayloadOneofCase.PresenceEvent)
+        {
+            Presence.Apply(envelope.PresenceEvent);
+        }
+
+        if (envelope.PayloadCase == Envelope.PayloadOneofCase.SessionClosed)
+        {
+            if (IsSupersededSignal(envelope.SessionClosed, null))
+            {
+                MarkSuperseded(envelope.SessionClosed.Message);
+            }
+            return Task.CompletedTask;
+        }
+
         DispatchEnvelopeCore(
             envelope,
             this,
@@ -159,7 +185,8 @@ public sealed partial class MessengerClient
             FileAvailablePushed,
             MessagePushed,
             RoomMemberChanged,
-            RoomRenamed);
+            RoomRenamed,
+            RoomReadUpdated);
 
         return Task.CompletedTask;
     }
@@ -175,7 +202,8 @@ public sealed partial class MessengerClient
         EventHandler<FileAvailableNotification>? fileAvailablePushed = null,
         EventHandler<MessageReceived>? memoPushed = null,
         EventHandler<TalkRoomMemberEvent>? roomMemberChanged = null,
-        EventHandler<TalkRoomRenamed>? roomRenamed = null)
+        EventHandler<TalkRoomRenamed>? roomRenamed = null,
+        EventHandler<TalkRoomReadUpdate>? roomReadUpdated = null)
     {
         switch (envelope.PayloadCase)
         {
@@ -205,6 +233,9 @@ public sealed partial class MessengerClient
                 break;
             case Envelope.PayloadOneofCase.TalkRoomRenamed:
                 roomRenamed?.Invoke(sender, envelope.TalkRoomRenamed);
+                break;
+            case Envelope.PayloadOneofCase.TalkRoomReadUpdate:
+                roomReadUpdated?.Invoke(sender, envelope.TalkRoomReadUpdate);
                 break;
         }
     }

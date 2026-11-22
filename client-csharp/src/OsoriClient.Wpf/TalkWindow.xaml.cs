@@ -101,7 +101,10 @@ public partial class TalkWindow : Window
 
         _client.TalkReceived += OnClientMessageReceived;
         _client.TalkRoomPushed += OnClientRoomMessagePushed;
+        _client.RoomReadUpdated += OnClientRoomReadUpdated;
+        _roomMembers.CollectionChanged += (_, _) => RefreshReadLabels();
         _client.FileAvailablePushed += OnClientFileAvailable;
+        _client.PresenceChanged += OnClientPresenceChangedForHeader;
         _client.RoomMemberChanged += OnClientRoomMemberChanged;
         _client.RoomRenamed += OnClientRoomRenamed;
 
@@ -171,6 +174,41 @@ public partial class TalkWindow : Window
         HeaderMetaText.Text = string.Empty;
     }
 
+    /// <summary>
+    /// 1:1 방(멤버 2명)이면 헤더를 상대 기준으로: 상대 이니셜·색 아바타, 접속 점, "온라인/오프라인".
+    /// 그룹 방은 기존처럼 방 아이콘 + 멤버 수. (예전엔 1:1 도 아바타 "방", 창 제목 "대화" 였다.)
+    /// </summary>
+    private void UpdateRoomHeaderAppearance()
+    {
+        if (_mode != Mode.Room) return;
+        var peer = RoomPeers.TryGetDirectCounterpart(_roomMembers, _currentUserId);
+        if (peer is null)
+        {
+            HeaderAvatarInitial.Text = "방";
+            HeaderAvatarBorder.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#BA68C8"));
+            HeaderPresenceDot.Visibility = Visibility.Collapsed;
+            return;
+        }
+        HeaderAvatarInitial.Text = peer[0].ToString().ToUpperInvariant();
+        HeaderAvatarBorder.Background = new SolidColorBrush(HashColor(peer));
+        var online = _client.Presence.IsOnline(peer);
+        HeaderPresenceDot.Visibility = Visibility.Visible;
+        HeaderPresenceDot.Fill = (Brush)FindResource(online ? "PresenceOnlineBrush" : "PresenceOfflineBrush");
+        HeaderMetaText.Text = online ? "온라인" : "오프라인";
+    }
+
+    private void OnClientPresenceChangedForHeader(object? sender, PresenceEvent e)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            var peer = RoomPeers.TryGetDirectCounterpart(_roomMembers, _currentUserId);
+            if (peer is not null && string.Equals(peer, e.UserId, StringComparison.OrdinalIgnoreCase))
+            {
+                UpdateRoomHeaderAppearance();
+            }
+        });
+    }
+
     private static Color HashColor(string id)
     {
         var palette = new[]
@@ -221,6 +259,8 @@ public partial class TalkWindow : Window
         {
             //: 히스토리/룸정보 로드 완료(또는 실패) 시 오버레이 숨김
             InitialLoadingOverlay.Visibility = Visibility.Collapsed;
+            _messages.CollectionChanged += (_, _) => UpdateEmptyRoomHint();
+            UpdateEmptyRoomHint();
         }
     }
 
@@ -238,7 +278,7 @@ public partial class TalkWindow : Window
         {
             if (picker.SelectedUserIds.Any(id => string.Equals(id, _currentUserId, StringComparison.OrdinalIgnoreCase)))
             {
-                MessageBox.Show(this, "자기 자신과는 대화를 시작할 수 없습니다.", "오소리 메신저");
+                AppDialog.Info(this, "자기 자신과는 대화를 시작할 수 없습니다.", "오소리 메신저");
             }
             return;
         }
@@ -252,6 +292,7 @@ public partial class TalkWindow : Window
     private void TalkWindow_OnActivated(object? sender, EventArgs e)
     {
         ResetUnreadState();
+        TryReportRead();
     }
 
     private async Task LoadRoomInfoAsync()
@@ -269,6 +310,7 @@ public partial class TalkWindow : Window
                 RebuildMemberDisplayItems();
                 DrawerHeaderText.Text = $"멤버 ({info.MemberCount})";
                 HeaderMetaText.Text = $"멤버 {info.MemberCount}명";
+                UpdateRoomHeaderAppearance();
                 var resolvedName = MainWindow.ResolveRoomDisplayName(info.Name, info.NameIsCustom, info.MemberIds, _currentUserId, _counterpartKey);
                 if (!string.IsNullOrWhiteSpace(resolvedName))
                 {
@@ -287,7 +329,9 @@ public partial class TalkWindow : Window
     {
         _client.TalkReceived -= OnClientMessageReceived;
         _client.TalkRoomPushed -= OnClientRoomMessagePushed;
+        _client.RoomReadUpdated -= OnClientRoomReadUpdated;
         _client.FileAvailablePushed -= OnClientFileAvailable;
+        _client.PresenceChanged -= OnClientPresenceChangedForHeader;
         _client.RoomMemberChanged -= OnClientRoomMemberChanged;
         _client.RoomRenamed -= OnClientRoomRenamed;
 
@@ -451,6 +495,9 @@ public partial class TalkWindow : Window
             };
 
             HandleIncomingRow(row);
+            // 보낸 사람은 자기 메시지까지 읽은 것 → 내 이전 메시지의 안 읽은 인원이 줄 수 있다.
+            if (_reads.Apply(e.FromUserId, e.ServerTs)) RefreshReadLabels();
+            TryReportRead();
         });
     }
 
@@ -578,15 +625,26 @@ public partial class TalkWindow : Window
                 row.ServerTs = ack.ServerTs;
             }
 
-            row.Status = ack.Result == TalkRoomSendAck.Types.Result.Ok
-                ? TalkMessageStatus.Delivered
-                : TalkMessageStatus.Failed;
+            row.Status = ack.Result switch
+            {
+                TalkRoomSendAck.Types.Result.Ok => TalkMessageStatus.Delivered,
+                TalkRoomSendAck.Types.Result.RateLimited => TalkMessageStatus.RateLimited,
+                _ => TalkMessageStatus.Failed,
+            };
+            if (ack.Result != TalkRoomSendAck.Types.Result.Ok)
+            {
+                // 실패 이유를 말풍선 아래 표시 대신 짧은 알림으로(요청 제한이면 잠시 후 다시 보내면 됨).
+                App.ShowInAppToast("보내지 못함", ResultMessages.RoomSend(ack.Result),
+                    ack.Result == TalkRoomSendAck.Types.Result.RateLimited ? App.ToastLevel.Warn : App.ToastLevel.Error);
+            }
 
             if (!string.IsNullOrEmpty(ack.ServerTalkId))
             {
                 row.ServerTalkId = ack.ServerTalkId;
                 _seenRoomMsgIds.Add(ack.ServerTalkId);
             }
+            if (ack.ServerTs > 0) _reads.Apply(_currentUserId, ack.ServerTs);
+            RefreshReadLabels();
         }
         catch (Exception ex)
         {
@@ -671,6 +729,23 @@ public partial class TalkWindow : Window
         item.DateSeparatorLabel = showDateSeparator
             ? BuildDateSeparatorLabel(item.Row.ServerTs)
             : string.Empty;
+        var prev = index > 0 ? _messages[index - 1].Row : null;
+        item.IsContinuation = MessageGrouping.IsContinuation(
+            prev?.Sender, prev?.ServerTs ?? 0, item.Row.Sender, item.Row.ServerTs, showDateSeparator);
+    }
+
+    /// <summary>위쪽에 이전 메시지를 끼워 넣은 뒤: 끼워 넣은 항목들과 원래 첫 항목의 구분선·묶음을 다시 계산.</summary>
+    private void RefreshDateSeparatorRange(int fromInclusive, int toInclusive)
+    {
+        for (var i = Math.Max(0, fromInclusive); i <= Math.Min(toInclusive, _messages.Count - 1); i++)
+        {
+            RefreshDateSeparatorAt(i);
+        }
+    }
+
+    private void UpdateEmptyRoomHint()
+    {
+        EmptyRoomHint.Visibility = _messages.Count == 0 && !_pendingInvite ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private static bool IsSameLocalDate(TalkMessageRow left, TalkMessageRow right)
@@ -715,6 +790,37 @@ public partial class TalkWindow : Window
         }
 
         TalkMessagesListBox.ScrollIntoView(_messages[^1]);
+    }
+
+    private void TalkMessagesListBox_OnMouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        // 목록 항목은 TalkMessageItem(날짜 구분선 등 포함 래퍼) — 실제 메시지는 Row.
+        if (TalkMessagesListBox.SelectedItem is TalkMessageItem { Row: var row } && row.AttachmentUploadId is not null)
+            _ = DownloadAttachmentRowAsync(row);
+    }
+
+    private void TalkMessagesListBox_OnKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && TalkMessagesListBox.SelectedItem is TalkMessageItem { Row: var row } && row.AttachmentUploadId is not null)
+        {
+            e.Handled = true;
+            _ = DownloadAttachmentRowAsync(row);
+        }
+    }
+
+    /// <summary>기록에 남은 방 파일 메시지(또는 나중에 받기를 고른 알림)를 사용자가 직접 내려받는다.</summary>
+    private async Task DownloadAttachmentRowAsync(TalkMessageRow row)
+    {
+        var uploadId = row.AttachmentUploadId;
+        if (string.IsNullOrEmpty(uploadId)) return;
+        var notice = new FileAvailableNotification
+        {
+            UploadId = uploadId,
+            FromUserId = row.Sender,
+            Filename = RoomFileText.ParseFileName(row.Text) ?? "file",
+            RoomId = _mode == Mode.Room ? _counterpartKey : "",
+        };
+        await DownloadFileToAsync(notice, row, originalText: row.Text);
     }
 
     private void TalkMessagesListBox_OnLoaded(object sender, RoutedEventArgs e)
@@ -770,12 +876,63 @@ public partial class TalkWindow : Window
                 if (!_seenRoomMsgIds.Add(msg.ServerTalkId)) continue;
                 AddMessageRow(BuildRoomHistoryRow(msg));
             }
+            ApplyReadStates(resp);
             ScrollToBottom();
+            TryReportRead();
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[Conv] room history initial load failed: {ex.Message}");
         }
+    }
+
+    // ---------------- 읽음 처리 ----------------
+    private readonly ReadReceiptTracker _reads = new();
+    private long _lastReportedReadTs;
+
+    /// <summary>히스토리 응답의 멤버별 읽음 위치 + "메시지를 보낸 사람은 그 메시지까지 읽음"을 반영.</summary>
+    private void ApplyReadStates(TalkRoomHistoryResponse resp)
+    {
+        foreach (var s in resp.ReadStates) _reads.Apply(s.UserId, s.LastReadTs);
+        foreach (var m in resp.Talks) _reads.Apply(m.FromUserId, m.ServerTs);
+        RefreshReadLabels();
+    }
+
+    /// <summary>내가 보낸 메시지마다 안 읽은 인원/읽음 표시를 다시 계산(방 모드만).</summary>
+    private void RefreshReadLabels()
+    {
+        if (_mode != Mode.Room || _roomMembers.Count == 0) return;
+        foreach (var item in _messages)
+        {
+            var row = item.Row;
+            if (!row.IsMine) continue;
+            if (row.Status is not (TalkMessageStatus.Delivered or TalkMessageStatus.Sending))
+            {
+                row.UnreadCount = null;
+                continue;
+            }
+            row.UnreadCount = _reads.UnreadCount(row.Status == TalkMessageStatus.Delivered ? row.ServerTs : 0, _currentUserId, _roomMembers);
+        }
+    }
+
+    /// <summary>창이 활성이고 화면에 남이 보낸 새 메시지가 있으면 서버에 읽음 보고.</summary>
+    private void TryReportRead()
+    {
+        if (_mode != Mode.Room || !IsActive || WindowState == WindowState.Minimized) return;
+        var ts = ReadReceiptTracker.NextReportTs(_messages.Select(i => (i.Row.ServerTs, i.Row.Sender)), _currentUserId, _lastReportedReadTs);
+        if (ts == 0) return;
+        _lastReportedReadTs = ts;
+        _reads.Apply(_currentUserId, ts);
+        _ = _client.ReportRoomReadAsync(_counterpartKey, ts);
+    }
+
+    private void OnClientRoomReadUpdated(object? sender, TalkRoomReadUpdate e)
+    {
+        if (_mode != Mode.Room || !string.Equals(e.RoomId, _counterpartKey, StringComparison.OrdinalIgnoreCase)) return;
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_reads.Apply(e.UserId, e.LastReadTs)) RefreshReadLabels();
+        });
     }
 
     private TalkMessageRow BuildRoomHistoryRow(TalkRoomReceived msg)
@@ -815,7 +972,9 @@ public partial class TalkWindow : Window
             {
                 _messages.Insert(0, new TalkMessageItem(newRows[i]));
             }
-            if (_messages.Count > 0) RefreshDateSeparatorAt(0);
+            // 예전엔 0번만 다시 계산해 끼워 넣은 나머지 항목에 날짜 구분선이 빠졌다.
+            RefreshDateSeparatorRange(0, newRows.Count);
+            ApplyReadStates(resp);
 
             _ = Dispatcher.BeginInvoke(new Action(() =>
             {
@@ -866,10 +1025,7 @@ public partial class TalkWindow : Window
                 var item = new TalkMessageItem(row);
                 _messages.Insert(0, item);
             }
-            if (_messages.Count > 0)
-            {
-                RefreshDateSeparatorAt(0);
-            }
+            RefreshDateSeparatorRange(0, newRows.Count);
 
             // 스크롤 위치 보존 — 새 메시지 추가된 만큼 아래로
             _ = Dispatcher.BeginInvoke(new Action(() =>
@@ -1022,7 +1178,7 @@ public partial class TalkWindow : Window
     {
         if (_mode != Mode.Room)
         {
-            MessageBox.Show(this, "이 메뉴는 대화방에서만 사용할 수 있습니다.", "알림");
+            AppDialog.Info(this, "이 메뉴는 대화방에서만 사용할 수 있습니다.", "알림");
             return;
         }
 
@@ -1054,7 +1210,7 @@ public partial class TalkWindow : Window
     {
         if (_orgRoots is null)
         {
-            MessageBox.Show(this, "조직도를 아직 불러오지 못했습니다.", "오소리 메신저");
+            AppDialog.Info(this, "조직도를 아직 불러오지 못했습니다.", "오소리 메신저");
             return;
         }
         var picker = new MessageRecipientPicker(_orgRoots, Array.Empty<string>(), excludeUserIds: _roomMembers) { Owner = this };
@@ -1078,18 +1234,18 @@ public partial class TalkWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, $"초대에 실패했습니다: {ex.Message}", "오소리 메신저");
+            AppDialog.Info(this, $"초대에 실패했습니다: {ex.Message}", "오소리 메신저");
             return;
         }
 
         if (ack.Result != TalkRoomInviteAck.Types.Result.Ok && ack.Result != TalkRoomInviteAck.Types.Result.NoValidTargets)
         {
-            MessageBox.Show(this, $"초대하지 못했습니다: {ack.Result}", "오소리 메신저");
+            AppDialog.Info(this, $"초대하지 못했습니다.\n{ResultMessages.RoomInvite(ack.Result)}", "오소리 메신저");
             return;
         }
         if (ack.AlreadyMemberUserIds.Count > 0)
         {
-            MessageBox.Show(
+            AppDialog.Info(
                 this,
                 $"이미 이 대화방에 있어서 다시 초대하지 않았습니다: {string.Join(", ", ack.AlreadyMemberUserIds)}",
                 "오소리 메신저");
@@ -1099,7 +1255,7 @@ public partial class TalkWindow : Window
 
     private async Task RenameRoomFlowAsync()
     {
-        var newName = PromptForText(this, "대화방 이름 설정", "새 이름을 입력하세요.");
+        var newName = PromptForText(this, "대화방 이름 설정", "새 이름을 입력하세요.", HeaderTitleText.Text);
         if (string.IsNullOrWhiteSpace(newName)) return;
         newName = newName.Trim();
 
@@ -1110,12 +1266,12 @@ public partial class TalkWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, $"이름 변경에 실패했습니다: {ex.Message}", "오소리 메신저");
+            AppDialog.Info(this, $"이름 변경에 실패했습니다: {ex.Message}", "오소리 메신저");
             return;
         }
         if (ack.Result != TalkRoomRenameAck.Types.Result.Ok)
         {
-            MessageBox.Show(this, $"이름을 바꾸지 못했습니다: {ack.Result}", "오소리 메신저");
+            AppDialog.Info(this, $"이름을 바꾸지 못했습니다.\n{ResultMessages.RoomRename(ack.Result)}", "오소리 메신저");
             return;
         }
         // 화면 반영은 서버가 쏴주는 TalkRoomRenamed(OnClientRoomRenamed)로 본인 창도 동일하게 처리된다.
@@ -1125,12 +1281,13 @@ public partial class TalkWindow : Window
     private async Task LeaveRoomFlowAsync()
     {
         if (_mode != Mode.Room) return;
-        if (MessageBox.Show(
+        if (!AppDialog.Confirm(
                 this,
                 "이 대화방에서 나가시겠습니까?",
                 "대화방 나가기",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question) != MessageBoxResult.Yes)
+                yes: "나가기",
+                no: "취소",
+                detail: "나가면 이 방의 새 메시지를 받지 않습니다. 대화 기록은 서버에 보존됩니다."))
         {
             return;
         }
@@ -1140,13 +1297,13 @@ public partial class TalkWindow : Window
             var ack = await _client.LeaveRoomAsync(_counterpartKey);
             if (ack.Result != TalkRoomLeaveAck.Types.Result.Ok)
             {
-                MessageBox.Show(this, $"나가지 못했습니다: {ack.Result}", "오소리 메신저");
+                AppDialog.Info(this, $"나가지 못했습니다.\n{ResultMessages.RoomLeave(ack.Result)}", "오소리 메신저");
                 return;
             }
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, $"나가기에 실패했습니다: {ex.Message}", "오소리 메신저");
+            AppDialog.Info(this, $"나가기에 실패했습니다: {ex.Message}", "오소리 메신저");
             return;
         }
 
@@ -1167,6 +1324,7 @@ public partial class TalkWindow : Window
             RebuildMemberDisplayItems();
             DrawerHeaderText.Text = $"멤버 ({e.MemberIds.Count})";
             HeaderMetaText.Text = $"멤버 {e.MemberIds.Count}명";
+            UpdateRoomHeaderAppearance();
 
             // 2026-09-17 — 방 이름이 수동으로 바뀐 적 없으면 서버가 인원 변동 때마다 자동으로
             // 재명명한다. 다만 서버는 "방장 기준"으로 딱 한 번만 계산해서 모든 멤버에게 똑같은
@@ -1206,57 +1364,20 @@ public partial class TalkWindow : Window
     }
 
     /// <summary>간단한 텍스트 입력 다이얼로그 (MainWindow.PromptForText 와 동일한 패턴).</summary>
-    private static string? PromptForText(Window owner, string title, string prompt)
+    private static string? PromptForText(Window owner, string title, string prompt, string initialValue = "")
     {
-        var dialog = new Window
-        {
-            Title = title,
-            Width = 360,
-            Height = 180,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Owner = owner,
-            ResizeMode = ResizeMode.NoResize,
-            Background = (Brush)Application.Current.FindResource("SurfaceBrush"),
-            FontFamily = (FontFamily)Application.Current.FindResource("AppFontFamily"),
-        };
-        var stack = new StackPanel { Margin = new Thickness(20) };
-        stack.Children.Add(new TextBlock { Text = prompt, Margin = new Thickness(0, 0, 0, 8) });
-        var box = new TextBox
-        {
-            Style = (Style)Application.Current.FindResource("AppTextBox"),
-            Margin = new Thickness(0, 0, 0, 12),
-        };
-        stack.Children.Add(box);
-        var btns = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-        var ok = new Button
-        {
-            Content = "확인",
-            Style = (Style)Application.Current.FindResource("PrimaryButton"),
-            Margin = new Thickness(0, 0, 8, 0),
-            IsDefault = true,
-        };
-        var cancel = new Button
-        {
-            Content = "취소",
-            Style = (Style)Application.Current.FindResource("SecondaryButton"),
-            IsCancel = true,
-        };
-        string? result = null;
-        ok.Click += (_, _) => { result = box.Text; dialog.DialogResult = true; };
-        cancel.Click += (_, _) => { dialog.DialogResult = false; };
-        btns.Children.Add(ok);
-        btns.Children.Add(cancel);
-        stack.Children.Add(btns);
-        dialog.Content = stack;
-        dialog.Loaded += (_, _) => box.Focus();
-        return dialog.ShowDialog() == true ? result : null;
+        // 코드로 만든 흰 시스템 타이틀바 창 대신 다른 창과 같은 커스텀 타이틀바의 공통 입력 창을 쓴다.
+        return TextInputDialog.Ask(owner, title, prompt, initialValue);
     }
 
     private async void AttachButton_OnClick(object sender, RoutedEventArgs e)
     {
-        if (_mode != Mode.DirectMessage)
+        // 방 모드는 방 ID 로 올린다(그룹·1:1 모두 방 멤버가 받는다). 구식 1:1 모드만 상대 ID.
+        var roomId = _mode == Mode.Room ? _counterpartKey : "";
+        var target = roomId.Length > 0 ? "" : ResolveFileTargetUserId();
+        if (roomId.Length == 0 && target is null)
         {
-            MessageBox.Show(this, "파일 첨부는 1:1 대화에서만 지원됩니다.", "알림");
+            AppDialog.Info(this, "이 대화에서는 파일을 첨부할 수 없습니다.", "알림");
             return;
         }
 
@@ -1272,10 +1393,21 @@ public partial class TalkWindow : Window
             return;
         }
 
-        await UploadAndSendAsync(dialog.FileName);
+        await UploadAndSendAsync(dialog.FileName, target ?? "", roomId);
     }
 
-    private async Task UploadAndSendAsync(string filePath)
+    /// <summary>
+    /// 파일을 받을 상대 사용자 ID. 구식 1:1 모드는 _counterpartKey 가 곧 상대 ID,
+    /// 방 모드는 멤버가 2명일 때만 나머지 한 명(그룹 방은 아직 미지원 → null).
+    /// </summary>
+    private string? ResolveFileTargetUserId()
+    {
+        if (_mode == Mode.DirectMessage)
+            return string.IsNullOrEmpty(_counterpartKey) ? null : _counterpartKey;
+        return RoomPeers.TryGetDirectCounterpart(_roomMembers, _currentUserId);
+    }
+
+    private async Task UploadAndSendAsync(string filePath, string targetUserId, string roomId = "")
     {
         var fileName = System.IO.Path.GetFileName(filePath);
         var fileInfo = new System.IO.FileInfo(filePath);
@@ -1289,16 +1421,19 @@ public partial class TalkWindow : Window
 
         try
         {
-            var ack = await _client.UploadFileAsync(filePath, _counterpartKey, ct: CancellationToken.None);
+            var ack = await _client.UploadFileAsync(filePath, targetUserId, ct: CancellationToken.None, roomId: roomId);
             if (ack.Result == FileUploadCompleteAck.Types.Result.Ok)
             {
                 row.Text = $"📎 {fileName} ({FormatSize(fileInfo.Length)}) 전송 완료";
                 row.Status = TalkMessageStatus.Delivered;
                 row.ServerTalkId = ack.UploadId;
+                row.AttachmentUploadId = ack.UploadId;
+                if (roomId.Length > 0) _seenRoomMsgIds.Add(ack.UploadId);
+                RefreshReadLabels();
             }
             else
             {
-                row.Text = $"📎 {fileName} 전송 실패: {ack.Result}";
+                row.Text = $"📎 {fileName} 전송 실패(서버에서 완료 처리 못함)";
                 row.Status = TalkMessageStatus.Failed;
             }
         }
@@ -1311,19 +1446,17 @@ public partial class TalkWindow : Window
 
     private void OnClientFileAvailable(object? sender, FileAvailableNotification e)
     {
-        if (_mode != Mode.DirectMessage)
-        {
-            return;
-        }
-
-        if (!string.Equals(e.FromUserId, _counterpartKey, StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
         Dispatcher.BeginInvoke(() =>
         {
-            if (!_seenServerMsgIds.Add(e.UploadId))
+            // 멤버 목록(_roomMembers)은 UI 스레드에서만 바뀌므로 판별도 UI 스레드에서.
+            if (!FileOfferMatcher.Matches(e.RoomId, e.FromUserId, _mode == Mode.Room ? _counterpartKey : null, ResolveFileTargetUserId()))
+            {
+                return;
+            }
+
+            // 방 파일은 서버가 같은 ID 로 대화 기록 메시지도 보내므로 방 메시지 ID 집합으로 중복을 거른다.
+            var seen = string.IsNullOrEmpty(e.RoomId) ? _seenServerMsgIds : _seenRoomMsgIds;
+            if (!seen.Add(e.UploadId))
             {
                 return;
             }
@@ -1341,6 +1474,7 @@ public partial class TalkWindow : Window
             {
                 Direction = MessageDirection.Received,
                 Status = TalkMessageStatus.Received,
+                AttachmentUploadId = e.UploadId,
             };
 
             HandleIncomingRow(row);
@@ -1350,18 +1484,25 @@ public partial class TalkWindow : Window
 
     private async Task HandleFileOfferAsync(FileAvailableNotification e, TalkMessageRow row)
     {
-        var choice = MessageBox.Show(
+        var choice = AppDialog.Confirm(
             this,
-            $"{e.FromUserId} 님이 파일을 보냈습니다.\n\n파일명: {e.Filename}\n크기: {FormatSize(e.TotalSize)}\n\n지금 다운로드하시겠습니까?",
+            $"{e.FromUserId} 님이 파일을 보냈습니다. 지금 받을까요?",
             "파일 수신",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Question);
+            yes: "받기",
+            no: "나중에",
+            detail: $"파일명: {e.Filename}\n크기: {FormatSize(e.TotalSize)}");
 
-        if (choice != MessageBoxResult.Yes)
+        if (!choice)
         {
             return;
         }
 
+        await DownloadFileToAsync(e, row, originalText: null);
+    }
+
+    /// <summary>저장 위치를 묻고 내려받는다. originalText 가 있으면 취소·완료 후 행 문구를 그걸 기준으로 둔다.</summary>
+    private async Task DownloadFileToAsync(FileAvailableNotification e, TalkMessageRow row, string? originalText)
+    {
         var save = new SaveFileDialog
         {
             Title = "파일 저장",
@@ -1386,8 +1527,8 @@ public partial class TalkWindow : Window
             row.Text = $"📎 {e.Filename} 다운로드 시작...";
             var file = await _client.DownloadFileAsync(e.UploadId, progress, CancellationToken.None);
             await System.IO.File.WriteAllBytesAsync(save.FileName, file.Bytes);
-            row.Text = $"📎 {e.Filename} ({FormatSize(e.TotalSize)}) 저장됨: {save.FileName}";
-            row.Status = TalkMessageStatus.Delivered;
+            row.Text = $"📎 {e.Filename} ({FormatSize(file.Bytes.Length)}) 저장됨: {save.FileName}";
+            if (originalText is null) row.Status = TalkMessageStatus.Delivered;
             System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{save.FileName}\"");
             // — 이미지면 자동 미리보기 (사용자 명시 액션 → 자동 오픈은 적정)
             if (IsImageFilename(e.Filename))
@@ -1403,7 +1544,7 @@ public partial class TalkWindow : Window
         catch (Exception ex)
         {
             row.Text = $"📎 {e.Filename} 다운로드 실패: {ex.Message}";
-            row.Status = TalkMessageStatus.Failed;
+            if (originalText is null) row.Status = TalkMessageStatus.Failed;
         }
     }
 
@@ -1469,6 +1610,20 @@ internal sealed class TalkMessageItem : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public TalkMessageRow Row { get; }
+
+    private bool _isContinuation;
+
+    /// <summary>바로 앞 메시지와 같은 사람이 3분 안에 이어 보낸 메시지(이름·아바타 생략).</summary>
+    public bool IsContinuation
+    {
+        get => _isContinuation;
+        set
+        {
+            if (_isContinuation == value) return;
+            _isContinuation = value;
+            OnPropertyChanged();
+        }
+    }
 
     public bool ShowDateSeparator
     {

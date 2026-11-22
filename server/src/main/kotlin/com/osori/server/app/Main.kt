@@ -248,9 +248,19 @@ fun Application.configureServer(
 
     val sessions = SessionManager()
     val talkRouter = TalkRouter(sessions, talkRepository, rateLimitPolicy, auditRepository, pluginRegistry)
+    // 1:1 외 요청(그룹 방 메시지·쪽지·파일 시작·방 관리·검색)도 같은 설정으로 종류별 버킷을 따로 둔다.
+    val requestRateLimiter = requestRateLimiterFor(rateLimitPolicy)
     val talkOutboxFlusher = talkRepository?.let { TalkOutboxFlusher(it) }
     val presenceBroadcaster = PresenceBroadcaster(sessions)
-    val messageHandler = com.osori.server.message.MessageHandler(messageRepository, sessions)
+    val messageHandler = com.osori.server.message.MessageHandler(
+        messageRepository, sessions,
+        attachmentOwnedBy = fileRepository?.let { repo ->
+            { uploadId: String, userId: String ->
+                val id = runCatching { java.util.UUID.fromString(uploadId) }.getOrNull()
+                id != null && repo.getUpload(id)?.fromUserId == userId
+            }
+        },
+    )
     val talkRoomHistoryHandler = com.osori.server.talk.TalkRoomHistoryHandler(talkRoomRepository)
     val loginHandler = LoginHandler(
         sessions,
@@ -264,9 +274,9 @@ fun Application.configureServer(
     )
     val talkHistoryHandler = TalkHistoryHandler(talkRepository)
     val talkRoomHandler = TalkRoomHandler(sessions, talkRoomRepository, auditRepository = auditRepository, pluginRegistry = pluginRegistry)
-    val fileHandler = FileHandler(sessions, fileRepository, fileStorageRoot, auditRepository = auditRepository, pluginRegistry = pluginRegistry)
+    val fileHandler = FileHandler(sessions, fileRepository, fileStorageRoot, auditRepository = auditRepository, pluginRegistry = pluginRegistry, roomRepository = talkRoomRepository)
     val orgListHandler = OrgListHandler(orgRepository)
-    val talkSearchHandler = TalkSearchHandler(talkRepository)
+    val talkSearchHandler = TalkSearchHandler(talkRepository, talkRoomRepository)
     val pushTokenHandler = PushTokenHandler(pushTokenRepository)
 
     val sessionReaper = SessionReaper(sessions)
@@ -282,7 +292,7 @@ fun Application.configureServer(
     com.osori.server.metrics.Metrics.sessionCountSampler = { sessions.count() }
 
     routing {
-        installWebSocketHandler(sessions, loginHandler, talkRouter, talkHistoryHandler, presenceBroadcaster, talkRoomHandler, fileHandler, orgListHandler, talkSearchHandler, auditRepository, pluginRegistry, pushTokenHandler, messageHandler, talkRoomHistoryHandler)
+        installWebSocketHandler(sessions, loginHandler, talkRouter, talkHistoryHandler, presenceBroadcaster, talkRoomHandler, fileHandler, orgListHandler, talkSearchHandler, auditRepository, pluginRegistry, pushTokenHandler, messageHandler, talkRoomHistoryHandler, requestRateLimiter)
         // 운영 헬스체크 — 도커 컴포즈 / 로드밸런서 / k8s probe 가 200 으로 살아있다고 판단
         get("/health") {
             val sessionCount = sessions.count()
@@ -327,3 +337,13 @@ fun Application.configureServer(
 
     logger.info("오소리 메신저 서버 구성 완료 (DB={})", if (userRepository != null) "ON" else "OFF")
 }
+
+/**
+ * 1:1 전송용 정책 설정을 그대로 본떠 요청 종류별 버킷을 만든다(종류마다 별도 인스턴스 = 별도 버킷).
+ * 비활성이면 모든 요청 통과.
+ */
+internal fun requestRateLimiterFor(base: RateLimitPolicy): com.osori.server.transport.RequestRateLimiter =
+    when (base) {
+        is RateLimitPolicy.PerUserTokenBucket -> com.osori.server.transport.RequestRateLimiter { base.copyForNewBucket() }
+        else -> com.osori.server.transport.RequestRateLimiter.DISABLED
+    }

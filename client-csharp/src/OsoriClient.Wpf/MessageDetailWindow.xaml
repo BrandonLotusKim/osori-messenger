@@ -44,7 +44,8 @@
                         Style="{StaticResource TitleBarButtonStyle}"
                         Tag="Close"
                         ToolTip="닫기"
-                        Click="CloseButton_OnClick">
+                        Click="CloseButton_OnClick"
+        AutomationProperties.Name="닫기">
                     <Viewbox Width="12" Height="12">
                         <Path Data="{StaticResource IconClose}">
                             <Path.Style>
@@ -116,7 +117,8 @@
                         Style="{StaticResource SecondaryButton}"
                         Padding="12,4" Height="28"
                         Click="AttachmentDownloadButton_OnClick"
-                        AutomationProperties.AutomationId="MessageAttachmentDownloadButton">
+                        AutomationProperties.AutomationId="MessageAttachmentDownloadButton"
+        AutomationProperties.Name="첨부 파일 다운로드">
                     <StackPanel Orientation="Horizontal">
                         <Viewbox Width="14" Height="14" Margin="0,0,6,0">
                             <Path Data="{StaticResource IconDownload}" Fill="{StaticResource TextPrimaryBrush}" />
@@ -153,14 +155,16 @@
                     <Button x:Name="ReplyButton" Style="{StaticResource FlatIconButton}"
                             Width="32" Height="32" ToolTip="답장"
                             Click="ReplyButton_OnClick"
-                            AutomationProperties.AutomationId="MessageReplyButton">
+                            AutomationProperties.AutomationId="MessageReplyButton"
+        AutomationProperties.Name="답장">
                         <Path Data="{StaticResource IconReply}" Fill="{StaticResource TextPrimaryBrush}"
                               Stretch="Uniform" Width="18" Height="18" />
                     </Button>
                     <Button x:Name="ReplyAllButton" Style="{StaticResource FlatIconButton}"
                             Width="32" Height="32" ToolTip="전체회신"
                             Click="ReplyAllButton_OnClick"
-                            AutomationProperties.AutomationId="MessageReplyAllButton">
+                            AutomationProperties.AutomationId="MessageReplyAllButton"
+        AutomationProperties.Name="전체회신">
                         <Grid Width="18" Height="18">
                             <Path Data="{StaticResource IconReply}" Fill="{StaticResource TextPrimaryBrush}"
                                   Stretch="Uniform" Margin="4,0,0,0" />
@@ -171,7 +175,8 @@
                     <Button x:Name="ForwardButton" Style="{StaticResource FlatIconButton}"
                             Width="32" Height="32" ToolTip="전달"
                             Click="ForwardButton_OnClick"
-                            AutomationProperties.AutomationId="MessageForwardButton">
+                            AutomationProperties.AutomationId="MessageForwardButton"
+        AutomationProperties.Name="전달">
                         <Path Data="{StaticResource IconForward}" Fill="{StaticResource TextPrimaryBrush}"
                               Stretch="Uniform" Width="18" Height="18" />
                     </Button>

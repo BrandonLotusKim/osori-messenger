@@ -81,7 +81,8 @@ public sealed partial class MessengerClient
         string toUserId,
         int chunkSize = 64 * 1024,
         string mimeType = "",
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string roomId = "")
     {
         if (chunkSize <= 0 || chunkSize > 1 * 1024 * 1024)
         {
@@ -98,6 +99,7 @@ public sealed partial class MessengerClient
             {
                 ClientReqId = clientReqId,
                 ToUserId = toUserId,
+                RoomId = roomId ?? "",
                 Filename = filename,
                 TotalSize = bytes.Length,
                 MimeType = mimeType
@@ -107,7 +109,7 @@ public sealed partial class MessengerClient
         var startAck = startResponse.FileUploadStartAck;
         if (startAck.Result != FileUploadStartAck.Types.Result.Ok)
         {
-            throw new InvalidOperationException($"File upload start rejected: {startAck.Result}");
+            throw new ServerRejectedException(ResultMessages.FileUploadStart(startAck.Result), startAck.Result.ToString());
         }
         var uploadId = startAck.UploadId;
 

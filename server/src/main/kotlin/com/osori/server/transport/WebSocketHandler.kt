@@ -44,6 +44,7 @@ fun Route.installWebSocketHandler(
     pushTokenHandler: PushTokenHandler? = null, //
     messageHandler: com.osori.server.message.MessageHandler? = null, //
     talkRoomHistoryHandler: com.osori.server.talk.TalkRoomHistoryHandler? = null, //
+    requestRateLimiter: RequestRateLimiter = RequestRateLimiter.DISABLED,
 ) {
     webSocket("/ws") {
         val clientSession: ClientSession = WsClientSession(this)
@@ -63,6 +64,15 @@ fun Route.installWebSocketHandler(
                     Envelope.parseFrom(frame.readBytes())
                 } catch (e: Exception) {
                     logger.warn("Envelope 파싱 실패 session={}: {}", clientSession.id, e.message)
+                    continue
+                }
+
+                // 요청 제한 공통 인터셉터 — 막히면 요청 종류에 맞는 RATE_LIMITED 응답만 보내고 처리하지 않는다.
+                val rejected = requestRateLimiter.check(clientSession.userId, envelope)
+                if (rejected != null) {
+                    logger.info("rate limit 초과 user={} case={}", clientSession.userId, envelope.payloadCase)
+                    com.osori.server.metrics.Metrics.messagesRateLimit.incrementAndGet()
+                    clientSession.send(Frame.Binary(true, rejected.toByteArray()))
                     continue
                 }
 
@@ -112,6 +122,9 @@ fun Route.installWebSocketHandler(
                     }
                     Envelope.PayloadCase.TALK_ROOM_RENAME -> {
                         talkRoomHandler?.handleRoomRename(clientSession, envelope.sequence, envelope.talkRoomRename)
+                    }
+                    Envelope.PayloadCase.TALK_ROOM_READ_REPORT -> {
+                        talkRoomHandler?.handleReadReport(clientSession, envelope.talkRoomReadReport)
                     }
                     Envelope.PayloadCase.FILE_UPLOAD_START -> {
                         fileHandler?.handleStart(clientSession, envelope.sequence, envelope.fileUploadStart)

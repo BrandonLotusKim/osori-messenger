@@ -71,6 +71,27 @@ class MessageHandlerTest {
     }
 
     @Test
+    fun `남이 올린 업로드를 첨부하면 INVALID_REQUEST, 본인 업로드는 통과`() = runBlocking {
+        val repo = newRepoStub()
+        justRun { repo.saveMemo(any(), any(), any(), any(), any(), any(), any()) }
+        every { repo.markDelivered(any(), any()) } returns 1
+        val owned = mapOf("up-alice" to "alice", "up-bob" to "bob")
+        val handler = MessageHandler(repo = repo, sessions = SessionManager(), attachmentOwnedBy = { id, user -> owned[id] == user })
+        val sender = FakeClientSession().apply { userId = "alice" }
+
+        handler.handleSend(sender, 1L, MessageSend.newBuilder().setClientMessageId("c1").setTitle("t")
+            .addRecipientIds("carol").setAttachmentUploadId("up-bob").build())
+        assertEquals(MessageSendAck.Result.INVALID_REQUEST, parseAck(sender).messageSendAck.result)
+        verify(exactly = 0) { repo.saveMemo(any(), any(), any(), any(), any(), any(), any()) }
+
+        sender.sentFrames.clear()
+        handler.handleSend(sender, 2L, MessageSend.newBuilder().setClientMessageId("c2").setTitle("t")
+            .addRecipientIds("carol").addRecipientIds("dave").setAttachmentUploadId("up-alice").build())
+        assertEquals(MessageSendAck.Result.OK, parseAck(sender).messageSendAck.result)
+        verify(exactly = 1) { repo.saveMemo(any(), "alice", any(), any(), any(), any(), "up-alice") }
+    }
+
+    @Test
     fun `정상 발송 + 온라인 수신자 push + markDelivered + ack OK`() = runBlocking {
         val repo = newRepoStub()
         justRun { repo.saveMemo(any(), any(), any(), any(), any(), any(), any()) }

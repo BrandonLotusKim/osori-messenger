@@ -102,6 +102,9 @@ public static class OrgTreeBuilder
         }
         if (unassignedBucket != null) roots.Add(unassignedBucket);
 
+        // 첫 화면에서 최상위만 접혀 있으면 비어 보이므로 최상위 부서는 펼친 채로 시작한다(2단계까지 보임).
+        foreach (var r in roots) r.IsExpanded = true;
+
         return roots;
     }
 

@@ -52,7 +52,7 @@ public sealed partial class MessengerClient
 
     private bool ShouldAttemptReconnect(ClientWebSocket socket)
     {
-        if (!AutoReconnectEnabled || _manualDisconnectRequested || _lifetimeCts.IsCancellationRequested)
+        if (!AutoReconnectEnabled || _manualDisconnectRequested || _sessionSuperseded || _lifetimeCts.IsCancellationRequested)
         {
             return false;
         }
@@ -77,7 +77,7 @@ public sealed partial class MessengerClient
 
             Exception? lastError = null;
 
-            while (!_lifetimeCts.IsCancellationRequested && !_manualDisconnectRequested && _reconnectAttempts < _maxReconnectAttempts)
+            while (!_lifetimeCts.IsCancellationRequested && !_manualDisconnectRequested && !_sessionSuperseded && _reconnectAttempts < _maxReconnectAttempts)
             {
                 var attemptIndex = _reconnectAttempts;
                 var delayMs = ComputeBackoffDelayMs(attemptIndex);
@@ -110,6 +110,11 @@ public sealed partial class MessengerClient
                         oldSocket.Dispose();
                     }
 
+                    if (_sessionSuperseded)
+                    {
+                        // 재접속 대기 중에 다른 곳 로그인 통지를 받은 경우 — 재로그인하지 않는다.
+                        return;
+                    }
                     var response = await LoginAsync(_userId, _password, _deviceId, _lifetimeCts.Token);
                     if (response.Status != LoginResponse.Types.Status.Ok)
                     {

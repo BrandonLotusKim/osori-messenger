@@ -98,6 +98,35 @@ public sealed class TalkSearchProtoTests
     }
 
     [Fact]
+    public void TalkSearchResponse_RoomHits_RoundTrip()
+    {
+        var resp = new TalkSearchResponse { ClientReqId = "req-room", MatchedCount = 1, Result = TalkSearchResponse.Types.Result.Ok };
+        var hit = new TalkSearchHit
+        {
+            ServerTalkId = "t-1",
+            RoomId = "3f1c0d2e-0000-0000-0000-000000000001",
+            RoomName = "배포 일정 논의",
+            RoomNameIsCustom = true,
+            FromUserId = "test7",
+            Text = "배포는 금요일 오전",
+            ServerTs = 1_700_000_200_000L,
+        };
+        hit.MemberIds.Add("test7");
+        hit.MemberIds.Add("test9");
+        resp.Hits.Add(hit);
+
+        var parsed = Envelope.Parser.ParseFrom(new Envelope { TalkSearchRes = resp }.ToByteArray()).TalkSearchRes;
+
+        Assert.Empty(parsed.Talks);
+        var h = Assert.Single(parsed.Hits);
+        Assert.Equal("3f1c0d2e-0000-0000-0000-000000000001", h.RoomId);
+        Assert.Equal("배포 일정 논의", h.RoomName);
+        Assert.True(h.RoomNameIsCustom);
+        Assert.Equal(new[] { "test7", "test9" }, h.MemberIds);
+        Assert.Equal("배포는 금요일 오전", h.Text);
+    }
+
+    [Fact]
     public void MessageSearchResponse_ServerErrorResult_RoundTrip()
     {
         var resp = new TalkSearchResponse

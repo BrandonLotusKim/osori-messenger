@@ -81,9 +81,14 @@
                         <Style TargetType="TextBlock">
                             <Setter Property="Visibility" Value="Collapsed" />
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding Row.IsMine}" Value="False">
+                                <!-- 같은 사람이 이어 보낸 메시지(IsContinuation)는 이름을 반복하지 않는다 -->
+                                <MultiDataTrigger>
+                                    <MultiDataTrigger.Conditions>
+                                        <Condition Binding="{Binding Row.IsMine}" Value="False" />
+                                        <Condition Binding="{Binding IsContinuation}" Value="False" />
+                                    </MultiDataTrigger.Conditions>
                                     <Setter Property="Visibility" Value="Visible" />
-                                </DataTrigger>
+                                </MultiDataTrigger>
                             </Style.Triggers>
                         </Style>
                     </TextBlock.Style>
@@ -112,6 +117,14 @@
                                     <DataTrigger Binding="{Binding Row.IsMine}" Value="False">
                                         <Setter Property="Visibility" Value="Visible" />
                                     </DataTrigger>
+                                    <!-- 이어 보낸 메시지: 아바타 자리만 남기고(정렬 유지) 숨김 -->
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding Row.IsMine}" Value="False" />
+                                            <Condition Binding="{Binding IsContinuation}" Value="True" />
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="Visibility" Value="Hidden" />
+                                    </MultiDataTrigger>
                                 </Style.Triggers>
                             </Style>
                         </Border.Style>
@@ -137,6 +150,27 @@
                                 </Style.Triggers>
                             </Style>
                         </StackPanel.Style>
+                        <!-- 읽음 표시: 안 읽은 인원 수(노랑) 또는 "읽음"(흐리게). 방 메시지만 값이 있다 -->
+                        <TextBlock Text="{Binding Row.ReadLabel}"
+                                   FontSize="{StaticResource FontTimestamp}"
+                                   HorizontalAlignment="Right"
+                                   AutomationProperties.Name="{Binding Row.ReadLabel}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+                                    <Setter Property="FontWeight" Value="Normal" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Row.HasUnread}" Value="True">
+                                            <Setter Property="Foreground" Value="{StaticResource BrandBrush}" />
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Row.ReadLabel}" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                         <TextBlock Text="{Binding Row.StatusIcon}"
                                    FontSize="{StaticResource FontTimestamp}"
                                    HorizontalAlignment="Right">
@@ -292,8 +326,11 @@
                     <Viewbox Width="14" Height="14" Stretch="Uniform">
                         <Path Data="{StaticResource IconLogo}" Fill="{StaticResource BrandBrush}" />
                     </Viewbox>
-                    <TextBlock Text="대화"
+                    <!-- 타이틀바에도 방(상대) 이름을 보여 준다(예전엔 모든 창이 "대화") -->
+                    <TextBlock Text="{Binding Text, ElementName=HeaderTitleText}"
                                Margin="8,0,0,0"
+                               MaxWidth="220"
+                               TextTrimming="CharacterEllipsis"
                                VerticalAlignment="Center"
                                FontWeight="SemiBold" />
                 </StackPanel>
@@ -301,7 +338,8 @@
                     <Button x:Name="TitleMinimizeButton"
                             Style="{StaticResource TitleBarButtonStyle}"
                             ToolTip="최소화"
-                            Click="TitleMinimizeButton_OnClick">
+                            Click="TitleMinimizeButton_OnClick"
+        AutomationProperties.Name="최소화">
                         <Viewbox Width="12" Height="12" Stretch="Uniform">
                             <Path Data="{StaticResource IconMinimize}"
                                   Fill="{StaticResource TextSecondaryBrush}" />
@@ -310,7 +348,8 @@
                     <Button x:Name="TitleMaximizeButton"
                             Style="{StaticResource TitleBarButtonStyle}"
                             ToolTip="최대화"
-                            Click="TitleMaximizeButton_OnClick">
+                            Click="TitleMaximizeButton_OnClick"
+        AutomationProperties.Name="최대화">
                         <Viewbox Width="12" Height="12" Stretch="Uniform">
                             <Path x:Name="TitleMaximizeIconPath"
                                   Data="{StaticResource IconMaximize}"
@@ -321,7 +360,8 @@
                             Style="{StaticResource TitleBarButtonStyle}"
                             Tag="Close"
                             ToolTip="닫기"
-                            Click="TitleCloseButton_OnClick">
+                            Click="TitleCloseButton_OnClick"
+        AutomationProperties.Name="닫기">
                         <Viewbox Width="12" Height="12">
                             <Path Data="{StaticResource IconClose}">
                                 <Path.Style>
@@ -394,7 +434,8 @@
                             ToolTip="멤버"
                             Click="HeaderMemberButton_OnClick"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                            AutomationProperties.AutomationId="TalkHeaderMemberButton">
+                            AutomationProperties.AutomationId="TalkHeaderMemberButton"
+        AutomationProperties.Name="멤버">
                         <Viewbox Width="16" Height="16">
                             <Path Data="{StaticResource IconPeople}" Fill="{StaticResource TextSecondaryBrush}" />
                         </Viewbox>
@@ -406,7 +447,8 @@
                             ToolTip="대화 내용 검색"
                             Click="HeaderSearchButton_OnClick"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                            AutomationProperties.AutomationId="TalkHeaderSearchButton">
+                            AutomationProperties.AutomationId="TalkHeaderSearchButton"
+        AutomationProperties.Name="대화 내용 검색">
                         <Viewbox Width="16" Height="16">
                             <Path Data="{StaticResource IconSearch}" Fill="{StaticResource TextSecondaryBrush}" />
                         </Viewbox>
@@ -448,6 +490,28 @@
                 </StackPanel>
             </Border>
 
+            <!-- 빈 대화방 안내: 메시지가 하나도 없을 때만 -->
+            <StackPanel Grid.Column="0"
+                        x:Name="EmptyRoomHint"
+                        Panel.ZIndex="5"
+                        Visibility="Collapsed"
+                        IsHitTestVisible="False"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        AutomationProperties.AutomationId="EmptyRoomHint">
+                <TextBlock Text="아직 주고받은 메시지가 없습니다"
+                           FontSize="15" FontWeight="SemiBold"
+                           HorizontalAlignment="Center" />
+                <TextBlock Text="아래 입력창에 첫 메시지를 써 보세요. + 버튼으로 파일도 보낼 수 있습니다."
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           FontSize="{StaticResource FontMeta}"
+                           Margin="0,8,0,0"
+                           TextAlignment="Center"
+                           TextWrapping="Wrap"
+                           MaxWidth="280"
+                           HorizontalAlignment="Center" />
+            </StackPanel>
+
             <ListBox Grid.Column="0"
                      x:Name="TalkMessagesListBox"
                      BorderThickness="0"
@@ -457,6 +521,8 @@
                      HorizontalContentAlignment="Stretch"
                      ItemTemplate="{StaticResource MessageBubbleTemplate}"
                      Loaded="TalkMessagesListBox_OnLoaded"
+                     MouseDoubleClick="TalkMessagesListBox_OnMouseDoubleClick"
+                     KeyDown="TalkMessagesListBox_OnKeyDown"
                      AutomationProperties.AutomationId="TalkMessagesListBox">
                 <ListBox.ItemContainerStyle>
                     <Style TargetType="ListBoxItem">
@@ -517,7 +583,8 @@
                     BorderThickness="0"
                     Cursor="Hand"
                     Click="NewMessageBadgeButton_OnClick"
-                    AutomationProperties.AutomationId="TalkNewMessageBadge">
+                    AutomationProperties.AutomationId="TalkNewMessageBadge"
+        AutomationProperties.Name="새 메시지로 이동">
                 <Border Background="{StaticResource NewMessageBadgeBgBrush}"
                         CornerRadius="{StaticResource CornerLarge}"
                         Padding="14,8">
@@ -675,7 +742,8 @@
                          BorderThickness="0"
                          FocusVisualStyle="{x:Null}"
                          PreviewKeyDown="TalkInputBox_OnPreviewKeyDown"
-                         AutomationProperties.AutomationId="TalkInputTextBox" />
+                         AutomationProperties.AutomationId="TalkInputTextBox"
+        AutomationProperties.Name="메시지 입력" />
 
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -691,7 +759,8 @@
                             Height="36"
                             ToolTip="파일 첨부 (Ctrl+U)"
                             Click="AttachButton_OnClick"
-                            AutomationProperties.AutomationId="TalkAttachButton">
+                            AutomationProperties.AutomationId="TalkAttachButton"
+        AutomationProperties.Name="파일 첨부">
                         <Viewbox Width="20" Height="20">
                             <Path Data="{StaticResource IconPlus}" Fill="{StaticResource TextSecondaryBrush}" />
                         </Viewbox>

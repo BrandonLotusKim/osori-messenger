@@ -121,13 +121,14 @@ public partial class MainWindow : Window
             var currentTrimmed = new Version(current.Major, current.Minor, current.Build < 0 ? 0 : current.Build);
             if (latest <= currentTrimmed) return;
 
-            var answer = MessageBox.Show(
+            var answer = AppDialog.Confirm(
                 this,
-                $"새 버전 {latest}이 있습니다 (현재 {currentTrimmed}).\n지금 업데이트할까요?\n\n예 = 설치 파일을 받아 자동 설치 후 앱 재시작\n아니오 = 나중에 다시 물어봄",
+                $"새 버전 {latest}이 있습니다 (현재 {currentTrimmed}).\n지금 업데이트할까요?",
                 "업데이트 확인",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question);
-            if (answer != MessageBoxResult.Yes) return;
+                yes: "지금 업데이트",
+                no: "나중에",
+                detail: "업데이트하면 설치 파일을 받아 자동 설치한 뒤 앱을 다시 시작합니다.");
+            if (!answer) return;
 
             var tempPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"OsoriMessenger-Update-{latest}.exe");
             var bytes = await http.GetByteArrayAsync($"{baseUrl}{downloadUrl}");
@@ -208,6 +209,7 @@ public partial class MainWindow : Window
         _client.Reconnected += OnClientReconnected;
         _client.ReconnectFailed += OnClientReconnectFailed;
         _client.Reconnecting += OnClientReconnecting;
+        _client.SessionSuperseded += OnClientSessionSuperseded;
         _client.TalkReceived += OnClientMessageReceived;
         _client.PresenceChanged += OnClientPresenceChanged;
         _client.MessagePushed += OnClientMessagePushed;
@@ -358,9 +360,14 @@ public partial class MainWindow : Window
     {
         Dispatcher.BeginInvoke(() =>
         {
+            var online = e.State == PresenceEvent.Types.State.Online;
             if (_conversationByKey.TryGetValue(e.UserId, out var row))
             {
-                row.Presence = e.State == PresenceEvent.Types.State.Online ? "online" : "offline";
+                row.Presence = online ? "online" : "offline";
+            }
+            if (e.State != PresenceEvent.Types.State.Unknown)
+            {
+                OrgTreeFilter.SetPresence(_orgRoots, e.UserId, online);
             }
         });
     }
@@ -421,15 +428,24 @@ public partial class MainWindow : Window
     {
         Dispatcher.BeginInvoke(() =>
         {
+            ReloginButton.Visibility = Visibility.Collapsed;
             ShowBanner("다시 연결됨", isSuccess: true);
-            SetStatusBar("● 연결됨", isConnected: true);
+            SetStatusBar("연결됨", isConnected: true);
             SetProfilePresence(online: true);
             // 2초 후 배너 자동 숨김
             var timer = new System.Windows.Threading.DispatcherTimer
             {
                 Interval = TimeSpan.FromSeconds(2)
             };
-            timer.Tick += (_, _) => { ConnectionBanner.Visibility = Visibility.Collapsed; timer.Stop(); };
+            timer.Tick += (_, _) =>
+            {
+                ConnectionBanner.Visibility = Visibility.Collapsed;
+                timer.Stop();
+                // 재로그인 직후 서버가 다시 보낸 온라인 스냅샷으로 조직도 접속 점을 맞춘다
+                // (끊긴 동안 나간 사람의 OFFLINE 이벤트는 못 받았을 수 있음).
+                OrgTreeFilter.ApplyPresence(_orgRoots, id => _client.Presence.IsOnline(id)
+                    || string.Equals(id, _currentUserId, StringComparison.OrdinalIgnoreCase));
+            };
             timer.Start();
         });
     }
@@ -439,7 +455,7 @@ public partial class MainWindow : Window
         Dispatcher.BeginInvoke(() =>
         {
             ShowBanner($"연결 실패: {reason}", isSuccess: false);
-            SetStatusBar("⚠ 연결 끊김", isConnected: false);
+            SetStatusBar("연결 끊김", isConnected: false);
             SetProfilePresence(online: false);
         });
     }
@@ -450,10 +466,44 @@ public partial class MainWindow : Window
         Dispatcher.BeginInvoke(() =>
         {
             ShowBanner("연결이 끊어졌습니다. 재접속 중...", isSuccess: false);
-            SetStatusBar("◯ 재연결 중...", isConnected: false);
+            SetStatusBar("재연결 중...", isConnected: false);
             SetProfilePresence(online: false);
         });
     }
+
+    /// <summary>
+    /// 같은 계정이 다른 곳에서 로그인해 서버가 이 세션을 끊음. 자동 재접속은 클라이언트가 이미 멈췄으므로
+    /// 안내 배너와 "다시 로그인" 버튼만 보여 준다(누르면 로그인 화면으로).
+    /// </summary>
+    private void OnClientSessionSuperseded(object? sender, string message)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            ShowBanner(message, isSuccess: false);
+            ReloginButton.Visibility = Visibility.Visible;
+            SetStatusBar("다른 곳에서 로그인됨", isConnected: false);
+            SetProfilePresence(online: false);
+            ProfilePresenceText.Text = "다른 곳에서 로그인됨";
+            App.ShowInAppToast("연결 끊김", message, App.ToastLevel.Warn);
+        });
+    }
+
+    private async void ReloginButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        ReloginButton.IsEnabled = false;
+        try { await _client.DisposeAsync(); } catch { }
+        foreach (var w in _openTalks.Values.ToList())
+        {
+            try { w.Close(); } catch { }
+        }
+        // 자동 로그인을 이번 한 번 건너뛰어, 사용자가 다른 곳 연결을 끊을지 직접 정하게 한다.
+        new LoginWindow(suppressAutoLogin: true, notice: "다른 곳에서 같은 계정으로 로그인되어 연결이 끊겼습니다. 다시 로그인하면 다른 곳의 연결이 끊깁니다.").Show();
+        _forceClose = true;
+        Close();
+    }
+
+    /// <summary>로그아웃/재로그인으로 창을 닫을 때는 트레이 숨김 대신 실제로 닫는다.</summary>
+    private bool _forceClose;
 
     /// <summary>프로필 헤더의 본인 presence dot/text 갱신 — 재연결 상태에 연동.</summary>
     private void SetProfilePresence(bool online)
@@ -484,10 +534,12 @@ public partial class MainWindow : Window
 
     private void SetStatusBar(string text, bool isConnected)
     {
+        // 색 점 하나 + 문구. 예전엔 문구 앞에도 ●/◯ 기호가 붙어 점이 두 개처럼 보였다.
         StatusBarText.Text = text;
         StatusBarDot.Fill = isConnected
             ? (Brush)FindResource("PresenceOnlineBrush")
             : (Brush)FindResource("BannerWarnFgBrush");
+        StatusBarBorder.ToolTip = $"서버 연결: {text} (초록 = 연결됨, 노랑 = 끊김 또는 재연결 중)";
     }
 
     /// <summary>외부에서 동기화 건수를 갱신할 때 호출 (Phase D-13).</summary>
@@ -500,23 +552,42 @@ public partial class MainWindow : Window
     // 이 두 진입점(검색해서 열기 / ID 직접 입력해서 새 대화)도 더 이상 구식 Mode.DirectMessage 로
     // 열지 않고 다른 진입점(조직도 더블클릭/우클릭/플러그인 버튼)과 동일하게 방 생성-또는-열기로
     // 통일한다. 이걸 안 하면 이 두 경로로 연 창만 메뉴(초대/이름변경/나가기)가 안 먹혀서 사용자가
-    // "메뉴 버튼이 안 눌린다"고 느끼는 혼란이 생긴다 — 검색 자체는 여전히 과거 대화 내용
-    // (talk_messages, 이관 후에도 원본 보존됨)을 대상으로 하지만, 상대를 찾은 뒤 여는 창은 방이다.
+    // "메뉴 버튼이 안 눌린다"고 느끼는 혼란이 생긴다. 검색은 서버가 내가 멤버인 방의 메시지를 찾아
+    // 방 ID 를 주므로 그 방을 바로 연다(옛 서버 응답이면 상대 ID 로 방 생성-또는-열기).
     private void TalkSearchButton_OnClick(object sender, RoutedEventArgs e)
     {
         var win = new TalkSearchWindow(_client, _currentUserId) { Owner = this };
-        if (win.ShowDialog() == true && !string.IsNullOrEmpty(win.SelectedCounterpart))
+        if (win.ShowDialog() != true) return;
+        if (!string.IsNullOrEmpty(win.SelectedRoomId))
+        {
+            var title = win.SelectedRoomTitle ?? win.SelectedRoomId;
+            GetOrCreateTalkRow(win.SelectedRoomId, title, isRoom: true);
+            OpenTalk(win.SelectedRoomId, title, TalkWindow.Mode.Room);
+        }
+        else if (!string.IsNullOrEmpty(win.SelectedCounterpart))
         {
             _ = OpenOrCreateRoomAsync(new List<string> { win.SelectedCounterpart });
         }
     }
 
+    // 새 대화: 사용자 ID 를 손으로 치는 대신 조직도 기반 선택기(쪽지 수신자 선택기 재사용)로 상대를 고른다.
+    // 1명이면 1:1(이미 있으면 그 방), 여러 명이면 그룹 방.
     private void TalkNewButton_OnClick(object sender, RoutedEventArgs e)
     {
-        var input = PromptForText(this, "새 대화", "상대방 사용자 ID를 입력하세요.");
-        if (string.IsNullOrWhiteSpace(input)) return;
-        input = input.Trim();
-        _ = OpenOrCreateRoomAsync(new List<string> { input });
+        if (_orgRoots is null || _orgRoots.Count == 0)
+        {
+            // 조직도를 아직 못 받았을 때만 예전 방식(ID 입력)으로 대체
+            var input = PromptForText(this, "새 대화", "상대방 사용자 ID를 입력하세요.");
+            if (string.IsNullOrWhiteSpace(input)) return;
+            _ = OpenOrCreateRoomAsync(new List<string> { input.Trim() });
+            return;
+        }
+        var picker = new MessageRecipientPicker(_orgRoots, Array.Empty<string>(), excludeUserIds: new[] { _currentUserId }) { Owner = this };
+        picker.SetPurpose("대화 상대 선택", "대화 시작", "대화할 사람을 골라 주세요");
+        if (picker.ShowDialog() != true) return;
+        var chosen = picker.SelectedUserIds;
+        if (chosen.Count == 0) return;
+        _ = OpenOrCreateRoomAsync(chosen.ToList());
     }
 
     private void TalkListBox_OnMouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -615,54 +686,10 @@ public partial class MainWindow : Window
     }
 
     /// <summary>간단한 텍스트 입력 다이얼로그 (별도 Window 없이 모달).</summary>
-    private static string? PromptForText(Window owner, string title, string prompt)
+    private static string? PromptForText(Window owner, string title, string prompt, string initialValue = "")
     {
-        var dialog = new Window
-        {
-            Title = title,
-            Width = 360,
-            Height = 180,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Owner = owner,
-            ResizeMode = ResizeMode.NoResize,
-            Background = (Brush)Application.Current.FindResource("SurfaceBrush"),
-            FontFamily = (FontFamily)Application.Current.FindResource("AppFontFamily"),
-        };
-        var stack = new StackPanel { Margin = new Thickness(20) };
-        stack.Children.Add(new TextBlock { Text = prompt, Margin = new Thickness(0, 0, 0, 8) });
-        var box = new TextBox
-        {
-            Style = (Style)Application.Current.FindResource("AppTextBox"),
-            Margin = new Thickness(0, 0, 0, 12),
-        };
-        stack.Children.Add(box);
-        var btns = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-        };
-        var ok = new Button
-        {
-            Content = "확인",
-            Style = (Style)Application.Current.FindResource("PrimaryButton"),
-            Margin = new Thickness(0, 0, 8, 0),
-            IsDefault = true,
-        };
-        var cancel = new Button
-        {
-            Content = "취소",
-            Style = (Style)Application.Current.FindResource("SecondaryButton"),
-            IsCancel = true,
-        };
-        string? result = null;
-        ok.Click += (_, _) => { result = box.Text; dialog.DialogResult = true; };
-        cancel.Click += (_, _) => { dialog.DialogResult = false; };
-        btns.Children.Add(ok);
-        btns.Children.Add(cancel);
-        stack.Children.Add(btns);
-        dialog.Content = stack;
-        dialog.Loaded += (_, _) => box.Focus();
-        return dialog.ShowDialog() == true ? result : null;
+        // 코드로 만든 흰 시스템 타이틀바 창 대신 다른 창과 같은 커스텀 타이틀바의 공통 입력 창을 쓴다.
+        return TextInputDialog.Ask(owner, title, prompt, initialValue);
     }
 
     // ───── 조직도 탭 (Phase C-8) ─────
@@ -681,11 +708,13 @@ public partial class MainWindow : Window
         {
             var resp = await _client.GetOrgListAsync(System.Threading.CancellationToken.None);
             _orgRoots = OrgTreeBuilder.Build(resp);
+            OrgTreeFilter.ApplyPresence(_orgRoots, id => _client.Presence.IsOnline(id)
+                || string.Equals(id, _currentUserId, StringComparison.OrdinalIgnoreCase));
             ApplyOrgFilter(OrgFilterBox?.Text ?? string.Empty);
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, $"조직도 로드 실패: {ex.Message}", "오류");
+            AppDialog.Info(this, $"조직도 로드 실패: {ex.Message}", "오류");
         }
     }
 
@@ -745,50 +774,23 @@ public partial class MainWindow : Window
         if (_orgRoots is null)
         {
             OrgTreeView.ItemsSource = null;
+            OrgFilterEmptyText.Visibility = Visibility.Collapsed;
             return;
         }
-        if (string.IsNullOrWhiteSpace(query))
+        // 멤버는 원본 인스턴스를 그대로 노출(선택 상태 유지), 부서는 펼친 복제본 — OrgTreeFilter 참고.
+        var filtered = OrgTreeFilter.Filter(_orgRoots, query);
+        OrgTreeView.ItemsSource = filtered;
+
+        var isFiltering = !string.IsNullOrWhiteSpace(query);
+        if (isFiltering && OrgTreeFilter.CountMembers(filtered) == 0)
         {
-            OrgTreeView.ItemsSource = _orgRoots;
-            return;
+            OrgFilterEmptyText.Text = $"'{query!.Trim()}' 에 해당하는 사람이 없습니다.\n이름 일부나 부서 이름으로 다시 찾아 보세요.";
+            OrgFilterEmptyText.Visibility = Visibility.Visible;
         }
-        var q = query.Trim();
-        bool Match(OrgTreeNode n) =>
-            (n.DisplayName ?? "").Contains(q, StringComparison.OrdinalIgnoreCase);
-        System.Collections.Generic.List<OrgTreeNode> Filter(System.Collections.Generic.IEnumerable<OrgTreeNode> nodes)
+        else
         {
-            var result = new System.Collections.Generic.List<OrgTreeNode>();
-            foreach (var n in nodes)
-            {
-                var childMatches = Filter(n.Children);
-                if (n.Kind == OrgTreeNodeKind.Member)
-                {
-                    // 멤버는 복제하지 않고 원본 인스턴스를 그대로 노출한다 — 복제본을 만들면
-                    // 체크박스(IsSelectedForRoom)를 눌러도 원본 _orgRoots 에는 반영이 안 돼서,
-                    // 검색 필터가 걸린 상태로 여러 명 체크하고 "대화하기"를 누르면 체크한 사람들이
-                    // 전부 무시되고 우클릭한 한 명만 방에 들어가는 버그가 있었다.
-                    if (Match(n))
-                    {
-                        result.Add(n);
-                    }
-                    continue;
-                }
-                if (Match(n) || childMatches.Count > 0)
-                {
-                    var clone = new OrgTreeNode
-                    {
-                        Kind = n.Kind,
-                        DisplayName = n.DisplayName,
-                        UserId = n.UserId,
-                        OrgPath = n.OrgPath,
-                    };
-                    foreach (var c in childMatches) clone.Children.Add(c);
-                    result.Add(clone);
-                }
-            }
-            return result;
+            OrgFilterEmptyText.Visibility = Visibility.Collapsed;
         }
-        OrgTreeView.ItemsSource = Filter(_orgRoots);
     }
 
     /// <summary>
@@ -817,6 +819,25 @@ public partial class MainWindow : Window
             ClearOrgCheckboxes();
             node.IsSelectedForRoom = true;
         }
+        UpdateOrgSelectionHint();
+    }
+
+    /// <summary>
+    /// 조직도 선택 인원을 레일 버튼에 보여 준다(예: "대화 3명"). 선택이 몇 명인지 화면에서 바로 알 수 있게.
+    /// 본인은 대화 상대가 아니므로 세지 않는다.
+    /// </summary>
+    private void UpdateOrgSelectionHint()
+    {
+        var count = GetCheckedOrgMemberIds()
+            .Count(id => !string.Equals(id, _currentUserId, StringComparison.OrdinalIgnoreCase));
+        PluginSendTalkLabel.Text = count > 0 ? $"대화 {count}명" : "대화하기";
+        PluginSendTalkButton.ToolTip = count > 0
+            ? $"선택한 {count}명과 대화하기 (Ctrl+클릭으로 더 고르기)"
+            : "대화하기 — 조직도에서 고른 사람과 대화방을 엽니다";
+        System.Windows.Automation.AutomationProperties.SetName(PluginSendTalkButton, count > 0 ? $"선택한 {count}명과 대화하기" : "대화하기");
+        PluginSendMessageButton.ToolTip = count > 0
+            ? $"선택한 {count}명에게 쪽지 쓰기"
+            : "쪽지 쓰기 — 조직도에서 고른 사람이 받는 사람으로 들어갑니다";
     }
 
     private void OrgTreeView_OnMouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -933,6 +954,7 @@ public partial class MainWindow : Window
             }
         }
         Walk(_orgRoots);
+        if (PluginSendTalkLabel is not null) UpdateOrgSelectionHint();
     }
 
     /// <summary>체크된 멤버(다중 선택)가 있으면 그들 전부, 없으면 포커싱된 단일 멤버(있다면) 하나.</summary>
@@ -1004,13 +1026,15 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, $"대화방을 만들지 못했습니다: {ex.Message}", "오소리 메신저");
+            AppDialog.Info(this, $"대화방을 만들지 못했습니다: {ex.Message}", "오소리 메신저");
             return;
         }
 
         if (ack.Result == TalkRoomCreateAck.Types.Result.DuplicateMembers)
         {
-            var choice = ShowDuplicateRoomDialog();
+            // 1:1(상대 1명)·나와의 대화는 같은 구성원 방을 새로 만들 이유가 거의 없으므로 묻지 않고 기존 방을 연다.
+            // 그룹(상대 2명 이상)만 "이동 / 새로 만들기" 를 묻는다.
+            var choice = targets.Count <= 1 ? DuplicateRoomChoice.Move : ShowDuplicateRoomDialog();
             if (choice == DuplicateRoomChoice.Cancel) return;
             if (choice == DuplicateRoomChoice.Move)
             {
@@ -1023,14 +1047,14 @@ public partial class MainWindow : Window
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, $"대화방을 만들지 못했습니다: {ex.Message}", "오소리 메신저");
+                AppDialog.Info(this, $"대화방을 만들지 못했습니다: {ex.Message}", "오소리 메신저");
                 return;
             }
         }
 
         if (ack.Result != TalkRoomCreateAck.Types.Result.Ok)
         {
-            MessageBox.Show(this, $"대화방을 만들지 못했습니다: {ack.Result}", "오소리 메신저");
+            AppDialog.Info(this, $"대화방을 만들지 못했습니다.\n{ResultMessages.RoomCreate(ack.Result)}", "오소리 메신저");
             return;
         }
 
@@ -1083,46 +1107,20 @@ public partial class MainWindow : Window
     /// <summary>"이미 같은 구성원의 방이 있습니다 — 이동할까요, 새로 만들까요?" 확인창.</summary>
     private DuplicateRoomChoice ShowDuplicateRoomDialog()
     {
-        var dialog = new Window
+        // 공통 보조 창(AppDialog): 다크 타이틀바, 내용 높이에 맞춰 늘어나 버튼이 잘리지 않는다.
+        var idx = AppDialog.Choose(
+            this,
+            "이미 같은 구성원으로 만들어진 대화방이 있습니다.\n어떻게 할까요?",
+            "대화방 만들기",
+            new[] { "대화방으로 이동", "새 대화방 만들기", "취소" },
+            defaultIndex: 0,
+            cancelIndex: 2);
+        return idx switch
         {
-            Title = "대화방 만들기",
-            Width = 380,
-            Height = 180,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Owner = this,
-            ResizeMode = ResizeMode.NoResize,
-            Background = (Brush)Application.Current.FindResource("SurfaceBrush"),
-            FontFamily = (FontFamily)Application.Current.FindResource("AppFontFamily"),
+            0 => DuplicateRoomChoice.Move,
+            1 => DuplicateRoomChoice.CreateNew,
+            _ => DuplicateRoomChoice.Cancel,
         };
-        var stack = new StackPanel { Margin = new Thickness(20) };
-        stack.Children.Add(new TextBlock
-        {
-            Text = "이미 같은 구성원으로 만들어진 대화방이 있습니다.\n어떻게 할까요?",
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 16),
-        });
-        var btns = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-        var moveBtn = new Button
-        {
-            Content = "대화방으로 이동",
-            Style = (Style)Application.Current.FindResource("PrimaryButton"),
-            Margin = new Thickness(0, 0, 8, 0),
-            IsDefault = true,
-        };
-        var createBtn = new Button
-        {
-            Content = "대화방 만들기",
-            Style = (Style)Application.Current.FindResource("SecondaryButton"),
-        };
-        var choice = DuplicateRoomChoice.Cancel;
-        moveBtn.Click += (_, _) => { choice = DuplicateRoomChoice.Move; dialog.DialogResult = true; };
-        createBtn.Click += (_, _) => { choice = DuplicateRoomChoice.CreateNew; dialog.DialogResult = true; };
-        btns.Children.Add(moveBtn);
-        btns.Children.Add(createBtn);
-        stack.Children.Add(btns);
-        dialog.Content = stack;
-        dialog.ShowDialog();
-        return choice;
     }
 
     private void RemoveTalkRow(string key)
@@ -1167,7 +1165,8 @@ public partial class MainWindow : Window
                 break;
             }
         }
-        SettingsDisplaySummary.Text = $"글꼴 {s.FontSize}pt · {s.Theme}";
+        // 테마 전환은 아직 없으므로 저장값(옛 기본 "light")과 무관하게 실제 화면인 다크로 표시한다.
+        SettingsDisplaySummary.Text = $"글꼴 {s.FontSize}pt · 다크";
 
         SettingsAutoReconnectCheck.IsChecked = s.AutoReconnect;
         SettingsAutoHistoryCheck.IsChecked = s.AutoSyncHistoryOnLogin;
@@ -1201,17 +1200,17 @@ public partial class MainWindow : Window
         // 유효성 검증
         if (!int.TryParse(SettingsPortBox.Text.Trim(), out var port) || port < 1 || port > 65535)
         {
-            MessageBox.Show(this, "포트는 1~65535 범위여야 합니다.", "저장 실패");
+            AppDialog.Info(this, "포트는 1~65535 범위여야 합니다.", "저장 실패");
             return;
         }
         if (!int.TryParse(SettingsFontSizeBox.Text.Trim(), out var fontSize) || fontSize < 8 || fontSize > 48)
         {
-            MessageBox.Show(this, "글꼴 크기는 8~48 범위여야 합니다.", "저장 실패");
+            AppDialog.Info(this, "글꼴 크기는 8~48 범위여야 합니다.", "저장 실패");
             return;
         }
         if (!int.TryParse(SettingsHistorySizeBox.Text.Trim(), out var pageSize) || pageSize < 1 || pageSize > 500)
         {
-            MessageBox.Show(this, "히스토리 페이지 크기는 1~500 이어야 합니다.", "저장 실패");
+            AppDialog.Info(this, "히스토리 페이지 크기는 1~500 이어야 합니다.", "저장 실패");
             return;
         }
 
@@ -1233,7 +1232,7 @@ public partial class MainWindow : Window
             s.NotifyMessages = SettingsNotifyMessageCheck.IsChecked == true;
             s.NotifyFiles = SettingsNotifyFileCheck.IsChecked == true;
             s.FontSize = fontSize;
-            s.Theme = (SettingsThemeCombo.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "light";
+            s.Theme = "dark"; // 테마 전환 구현 전 — 실제 화면과 같은 값으로 저장
             s.AutoReconnect = SettingsAutoReconnectCheck.IsChecked == true;
             s.AutoSyncHistoryOnLogin = SettingsAutoHistoryCheck.IsChecked == true;
             s.AutoLoadOrgOnLogin = SettingsAutoOrgCheck.IsChecked == true;
@@ -1257,8 +1256,7 @@ public partial class MainWindow : Window
 
     private void SettingsResetButton_OnClick(object sender, RoutedEventArgs e)
     {
-        if (MessageBox.Show(this, "모든 설정을 기본값으로 되돌릴까요?", "초기화",
-            MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+        if (AppDialog.Confirm(this, "모든 설정을 기본값으로 되돌릴까요?", "초기화", yes: "초기화", no: "취소"))
         {
             _settings.ResetToDefaults();
             LoadSettingsUi();
@@ -1311,8 +1309,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, $"로그 내보내기 실패: {ex.Message}", "오류",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            AppDialog.Info(this, "로그를 내보내지 못했습니다.", "오류", detail: ex.Message);
         }
     }
 
@@ -1325,6 +1322,8 @@ public partial class MainWindow : Window
         // 바로 다시 로그인됨). 명시적으로 로그아웃한 이번 한 번만 자동 로그인을 건너뛴다 —
         // 저장된 설정 자체는 안 건드리므로, 앱을 완전히 재시작하면 자동 로그인은 다시 정상 동작한다.
         new LoginWindow(suppressAutoLogin: true).Show();
+        // 트레이 숨김 설정이어도 로그아웃이면 이 창은 실제로 닫는다(숨긴 채 남으면 옛 세션 창이 살아 있음).
+        _forceClose = true;
         Close();
     }
 
@@ -1473,7 +1472,7 @@ public partial class MainWindow : Window
     {
         // multi 모드에선 트레이 아이콘이 없으므로 X = 실제 종료 (Hide 하면 되살릴 방법이 없음)
         var closeToTray = _settings.Current.CloseToTray && !App.MultiInstanceMode;
-        if (closeToTray && !App.ForceShutdownRequested)
+        if (closeToTray && !App.ForceShutdownRequested && !_forceClose)
         {
             e.Cancel = true;
             Hide();
@@ -1545,7 +1544,17 @@ public partial class MainWindow : Window
         }
     }
 
-    private void MessageListBox_OnMouseDoubleClick(object sender, MouseButtonEventArgs e)
+    private void MessageListBox_OnMouseDoubleClick(object sender, MouseButtonEventArgs e) => OpenSelectedMessage();
+
+    /// <summary>쪽지 목록에서 Enter 로도 상세 창을 연다(키보드 사용자).</summary>
+    private void MessageListBox_OnKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || MessageListBox.SelectedItem is null) return;
+        e.Handled = true;
+        OpenSelectedMessage();
+    }
+
+    private void OpenSelectedMessage()
     {
         if (MessageListBox.SelectedItem is not MessageRowVm row) return;
         var dlg = new MessageDetailWindow(_client, row, _messageBox == "sent", _currentUserId) { Owner = this };
@@ -1748,9 +1757,16 @@ public sealed class MessageRowVm : System.ComponentModel.INotifyPropertyChanged
             _isRead = value;
             PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(IsRead)));
             PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(UnreadVisibility)));
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(IsUnreadInbox)));
         }
     }
     public Visibility UnreadVisibility => (!IsSentBox && !IsRead) ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>받은 쪽지함의 안 읽은 쪽지(제목 강조용).</summary>
+    public bool IsUnreadInbox => !IsSentBox && !IsRead;
+
+    /// <summary>목록용 본문 미리보기 — 줄바꿈을 공백으로 바꾼 앞부분.</summary>
+    public string BodyPreview => OsoriClient.Core.TextPreview.OneLine(Body, 60);
 
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
 

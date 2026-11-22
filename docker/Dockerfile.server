@@ -1,4 +1,4 @@
-# 오소리 메신저 서버 운영 이미지 — OC-280
+# 오소리 메신저 서버 운영 이미지 —
 #
 # 멀티스테이지 빌드:
 #   1. eclipse-temurin:17-jdk 로 gradlew shadowJar 실행

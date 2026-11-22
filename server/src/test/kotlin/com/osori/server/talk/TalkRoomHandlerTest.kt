@@ -60,6 +60,48 @@ class TalkRoomHandlerTest {
     }
 
     @Test
+    fun `read report advances only forward, broadcasts to other online members, ignores non members`() = runBlocking {
+        val now = 1_800_000_000_000L
+        val h = TalkRoomHandler(sessions, roomRepo, nowMillis = { now })
+        val roomId = roomRepo.createRoom("g", "alice", java.time.Instant.ofEpochMilli(now - 10_000), listOf("bob", "carol"))
+        val alice = FakeClientSession().apply { userId = "alice" }
+        val bob = FakeClientSession().apply { userId = "bob" }
+        val carol = FakeClientSession().apply { userId = "carol" }
+        sessions.bind("alice", alice); sessions.bind("bob", bob); sessions.bind("carol", carol)
+
+        h.handleReadReport(bob, com.osori.proto.v1.TalkRoomReadReport.newBuilder().setRoomId(roomId.toString()).setLastReadTs(now - 5_000).build())
+        val upd = parseAck(alice, Envelope.PayloadCase.TALK_ROOM_READ_UPDATE).talkRoomReadUpdate
+        assertEquals("bob", upd.userId)
+        assertEquals(now - 5_000, upd.lastReadTs)
+        assertTrue(carol.sentFrames.isNotEmpty())
+        assertTrue(bob.sentFrames.isEmpty(), "보고한 본인에게는 보내지 않음")
+
+        // 과거 값 → 무시(방송 없음), 미래 값 → 서버 현재 시각으로 자름
+        alice.sentFrames.clear()
+        h.handleReadReport(bob, com.osori.proto.v1.TalkRoomReadReport.newBuilder().setRoomId(roomId.toString()).setLastReadTs(now - 9_000).build())
+        assertTrue(alice.sentFrames.isEmpty())
+        h.handleReadReport(bob, com.osori.proto.v1.TalkRoomReadReport.newBuilder().setRoomId(roomId.toString()).setLastReadTs(now + 60_000).build())
+        assertEquals(now, parseAck(alice, Envelope.PayloadCase.TALK_ROOM_READ_UPDATE).talkRoomReadUpdate.lastReadTs)
+        assertEquals(now, roomRepo.listReadStates(roomId)["bob"]?.toEpochMilli())
+
+        // 멤버 아님 → 저장 안 함
+        UserRepository(PostgresTestContainer.database()).createIfAbsent("dave", "Dave")
+        val dave = FakeClientSession().apply { userId = "dave" }
+        h.handleReadReport(dave, com.osori.proto.v1.TalkRoomReadReport.newBuilder().setRoomId(roomId.toString()).setLastReadTs(now).build())
+        assertTrue(roomRepo.listReadStates(roomId)["dave"] == null)
+    }
+
+    @Test
+    fun `sending a room message marks sender as read up to it`() = runBlocking {
+        val now = 1_800_000_000_000L
+        val h = TalkRoomHandler(sessions, roomRepo, nowMillis = { now })
+        val roomId = roomRepo.createRoom("g", "alice", java.time.Instant.ofEpochMilli(now - 10_000), listOf("bob"))
+        val alice = FakeClientSession().apply { userId = "alice" }
+        h.handleRoomSend(alice, 1L, TalkRoomSend.newBuilder().setRoomId(roomId.toString()).setClientTalkId("c").setText("hi").build())
+        assertEquals(now, roomRepo.listReadStates(roomId)["alice"]?.toEpochMilli())
+    }
+
+    @Test
     fun `handleRoomCreate with blank name returns INVALID_NAME`() = runBlocking {
         val sender = FakeClientSession().apply { userId = "alice" }
         handler.handleRoomCreate(
@@ -360,6 +402,37 @@ class TalkRoomHandlerTest {
 
         val renamed = parseAck(alice, Envelope.PayloadCase.TALK_ROOM_RENAMED).talkRoomRenamed
         assertEquals("새 이름", renamed.newName)
+    }
+
+    @Test
+    fun `room send invite rename leave are written to audit log without message body`() = runBlocking {
+        val audit = com.osori.server.audit.AuditRepository(PostgresTestContainer.database())
+        val h = TalkRoomHandler(sessions, roomRepo, auditRepository = audit)
+        val alice = FakeClientSession().apply { userId = "alice" }
+        h.handleRoomCreate(alice, 1L, TalkRoomCreate.newBuilder().setName("team").setClientReqId("c").build())
+        val roomId = parseAck(alice, Envelope.PayloadCase.TALK_ROOM_CREATE_ACK).talkRoomCreateAck.roomId
+
+        h.handleRoomInvite(alice, 2L, TalkRoomInvite.newBuilder().setRoomId(roomId).addTargetUserIds("bob").setClientReqId("i").build())
+        h.handleRoomSend(alice, 3L, TalkRoomSend.newBuilder().setClientTalkId("t").setRoomId(roomId).setText("비밀 본문 내용").build())
+        h.handleRoomRename(alice, 4L, TalkRoomRename.newBuilder().setRoomId(roomId).setNewName("배포 논의").setClientReqId("r").build())
+        h.handleRoomLeave(alice, 5L, TalkRoomLeave.newBuilder().setRoomId(roomId).setClientReqId("l").build())
+
+        val sent = audit.findLatestByType("room.msg.sent").single()
+        assertEquals("alice", sent.actorUserId)
+        assertTrue(sent.payloadJson.contains(roomId))
+        assertTrue(sent.payloadJson.contains("\"bytes\""))
+        assertTrue(!sent.payloadJson.contains("비밀 본문"), "본문은 감사 로그에 남기지 않는다")
+
+        val invited = audit.findLatestByType("room.invited").single()
+        assertEquals(roomId, invited.target)
+        assertTrue(invited.payloadJson.contains("bob"))
+
+        val renamed = audit.findLatestByType("room.renamed").single()
+        assertTrue(renamed.payloadJson.contains("배포 논의"))
+
+        val left = audit.findLatestByType("room.left").single()
+        assertEquals("alice", left.actorUserId)
+        assertTrue(left.payloadJson.contains("\"roomDeleted\": false") || left.payloadJson.contains("\"roomDeleted\":false"))
     }
 
     private fun parseAck(session: FakeClientSession, expected: Envelope.PayloadCase): Envelope {

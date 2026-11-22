@@ -17,7 +17,7 @@
 
 ## 2. 레이아웃 (ASCII 와이어프레임)
 
-`
+```
 ╔══════════════════════════════════════════════════════════╗
 ║ 오소리 메신저  🦡                          [─][□][×]    ║  ← 커스텀 타이틀바
 ╠══════════════════════════════════════════════════════════╣
@@ -45,11 +45,11 @@
 ║ ● 연결됨  ·  145건 동기화  ·  조직도 최신                ║  ← 상태 바
 ╚══════════════════════════════════════════════════════════╝
           Width: 380    Height: 680   (리사이즈 가능)
-`
+```
 
 ### 조직도 탭 (🏢)
 
-`
+```
 ║  💬 ║  조직도                              🔄            ║
 ║     ║  ─────────────────────────────────────────────    ║
 ║  🏢 ║  📁 오소리랩 (5)                                   ║
@@ -63,11 +63,11 @@
 ║     ║  검색 ┌─────────────────────────────┐              ║
 ║     ║        │ 이름/부서로 필터              │            ║
 ║     ║        └─────────────────────────────┘              ║
-`
+```
 
 ### 설정 탭 (⚙)
 
-`
+```
 ║  💬 ║  설정                                              ║
 ║     ║  ─────────────────────────────────────────────    ║
 ║     ║  ▸ 서버 연결      osori.local:7071         ║
@@ -79,7 +79,7 @@
 ║     ║  ─────────────────────────────────────────────    ║
 ║     ║  버전 0.1.0  ·  프로토콜 v1                        ║
 ║     ║  [로그아웃]  [개발자 도구]                         ║
-`
+```
 
 각 섹션 ▸ 를 누르면 서브 패널로 확장 (accordion). SettingsWindow 는 모달 삭제, 인라인으로 통합.
 
@@ -110,10 +110,10 @@
 ### 3.4 대화 리스트 (💬 탭)
 - 헤더: "대화" + 검색 버튼 + 새 대화(+)
 - 리스트 아이템 **한 행**:
-  `
+  ```
   [presence dot] [이름/방명] ............... [시각]
                  [미리보기 한 줄]            [안읽음배지]
-  `
+  ```
 - 정렬: 마지막 메시지 시각 DESC
 - presence dot 색:
   - 🟢 온라인
@@ -179,7 +179,7 @@
 
 LoginWindow 와 동일 팔레트 재사용. 추가 토큰:
 
-`
+```
 PresenceOnline      #4CAF50
 PresenceOffline     #9E9E9E
 PresenceAway        #FBC02D
@@ -205,7 +205,7 @@ ListItemHeight        64px
 ListItemPadding       10 12
 RailWidth             56px
 AvatarSize            40px
-`
+```
 
 ---
 
@@ -235,7 +235,7 @@ AvatarSize            40px
 
 ## 9. AutomationId 목록
 
-`
+```
 MainTitleBar
 MainProfileHeader, MainPresenceDropdown
 TabRailConversation, TabRailOrg, TabRailSettings
@@ -244,7 +244,7 @@ OrgTreeView, OrgFilterBox, OrgReloadButton
 SettingsPanel, SettingsConnSection, SettingsNotifySection, ...
 StatusBarConnection, StatusBarSync, StatusBarNotifications
 DisconnectedBanner, ReconnectingBanner
-`
+```
 
 ---
 

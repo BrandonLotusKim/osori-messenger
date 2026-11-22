@@ -27,10 +27,10 @@ Windows 사용자에게 배포 가능한 단일 실행 `.exe` 설치 파일을 �
 
 ## 빌드
 
-`cmd
+```cmd
 cd installer
 build-installer.bat
-`
+```
 
 결과: `installer\Output\OsoriMessenger-Setup-0.1.0.exe`
 

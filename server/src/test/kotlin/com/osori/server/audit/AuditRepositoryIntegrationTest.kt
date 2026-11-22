@@ -102,4 +102,24 @@ class AuditRepositoryIntegrationTest {
 
         assertEquals(0L, repo.count())
     }
+
+    @Test
+    fun `recordSessionSuperseded 와 대화방 이벤트 편의 메서드`() {
+        repo.recordSessionSuperseded("alice", "11", "12")
+        repo.recordRoomInvited("alice", "room-1", listOf("bob", "carol\"x"))
+        repo.recordRoomMessageSent("alice", "room-1", "m-1", bytes = 42, recipients = 2)
+
+        val sup = repo.findLatestByType("auth.session.superseded").single()
+        assertEquals("11", sup.target)
+        assertTrue(sup.payloadJson.contains("12"))
+
+        val inv = repo.findLatestByType("room.invited").single()
+        assertTrue(inv.payloadJson.contains("bob"))
+        assertTrue(inv.payloadJson.contains("carol"))
+
+        val msg = repo.findLatestByType("room.msg.sent").single()
+        assertEquals("m-1", msg.target)
+        assertTrue(msg.payloadJson.contains("42"))
+        assertTrue(msg.payloadJson.contains("\"recipients\""))
+    }
 }

@@ -43,6 +43,7 @@ class FileHandler(
     private val maxChunkBytes: Int = 1 * 1024 * 1024,
     private val auditRepository: com.osori.server.audit.AuditRepository? = null, //
     private val pluginRegistry: com.osori.server.plugin.PluginRegistry? = null, //
+    private val roomRepository: com.osori.server.db.TalkRoomRepository? = null,
 ) {
     private val logger = LoggerFactory.getLogger(FileHandler::class.java)
     private val serverSequence = AtomicLong(3_000_000)
@@ -51,6 +52,7 @@ class FileHandler(
         val uploadId: UUID,
         val fromUserId: String,
         val toUserId: String,
+        val roomId: UUID?,
         val filename: String,
         val mimeType: String,
         val totalSize: Long,
@@ -71,7 +73,16 @@ class FileHandler(
             respond(sender, sequence, failStartAck(req.clientReqId, FileUploadStartAck.Result.SERVER_ERROR))
             return
         }
-        if (req.toUserId.isBlank()) {
+        // 방 파일: room_id 가 있으면 보낸 사람이 그 방 멤버여야 한다. 없으면 기존처럼 받는 사람 지정.
+        var roomId: UUID? = null
+        if (req.roomId.isNotBlank()) {
+            roomId = runCatching { UUID.fromString(req.roomId) }.getOrNull()
+            val repo = roomRepository
+            if (roomId == null || repo == null || !repo.isMember(roomId, senderUserId)) {
+                respond(sender, sequence, failStartAck(req.clientReqId, FileUploadStartAck.Result.INVALID_TARGET))
+                return
+            }
+        } else if (req.toUserId.isBlank()) {
             respond(sender, sequence, failStartAck(req.clientReqId, FileUploadStartAck.Result.INVALID_TARGET))
             return
         }
@@ -102,6 +113,7 @@ class FileHandler(
                     mimeType = req.mimeType,
                     totalSize = req.totalSize,
                     storagePath = storagePath.toString(),
+                    roomId = roomId,
                 )
             }.onFailure { t ->
                 logger.error("FileRepository.createUpload failed", t)
@@ -117,6 +129,7 @@ class FileHandler(
             uploadId = uploadId,
             fromUserId = senderUserId,
             toUserId = req.toUserId,
+            roomId = roomId,
             filename = req.filename,
             mimeType = req.mimeType,
             totalSize = req.totalSize,
@@ -209,7 +222,47 @@ class FileHandler(
         respond(sender, sequence, ack)
         com.osori.server.metrics.Metrics.filesUploaded.incrementAndGet()
 
-        notifyRecipient(state)
+        val noticeTs = nowMillis()
+        notifyRecipient(state, noticeTs)
+        recordRoomFileMessage(state, noticeTs)
+    }
+
+    /**
+     * 방 파일이면 대화 기록에도 한 줄 남긴다(server_talk_id = 업로드 ID). 창을 열지 않은 멤버도
+     * 대화 목록 미리보기·안 읽음으로 알 수 있고, 나중에 방을 열면 기록에서 내려받을 수 있다.
+     * 클라는 파일 알림과 이 메시지를 같은 ID 로 받아 한 줄만 그린다.
+     */
+    private suspend fun recordRoomFileMessage(state: UploadState, ts: Long) {
+        val roomId = state.roomId ?: return
+        val repo = roomRepository ?: return
+        val text = roomFileMessageText(state.filename, state.totalSize)
+        val inserted = runCatching {
+            repo.insertRoomTalk(
+                roomId, state.fromUserId, text, java.time.Instant.ofEpochMilli(ts),
+                serverTalkId = state.uploadId, attachmentUploadId = state.uploadId.toString(),
+            )
+        }.onFailure { t -> logger.warn("room file message insert failed upload={}", state.uploadId, t) }.isSuccess
+        if (!inserted) return
+        runCatching { repo.advanceLastRead(roomId, state.fromUserId, java.time.Instant.ofEpochMilli(ts)) }
+        val msg = com.osori.proto.v1.TalkRoomReceived.newBuilder()
+            .setServerTalkId(state.uploadId.toString())
+            .setRoomId(roomId.toString())
+            .setFromUserId(state.fromUserId)
+            .setText(text)
+            .setServerTs(ts)
+            .setAttachmentUploadId(state.uploadId.toString())
+            .build()
+        val members = runCatching { repo.listMembers(roomId) }.getOrDefault(emptyList())
+        for (member in members) {
+            if (member == state.fromUserId) continue
+            val s = sessions.get(member) ?: continue
+            val envelope = Envelope.newBuilder()
+                .setSequence(serverSequence.incrementAndGet())
+                .setTalkRoomReceived(msg)
+                .build()
+            runCatching { s.send(Frame.Binary(true, envelope.toByteArray())) }
+                .onFailure { t -> logger.warn("room file message to {} failed", member, t) }
+        }
     }
 
     suspend fun handleDownloadRequest(sender: ClientSession, sequence: Long, req: FileDownloadRequest) {
@@ -233,7 +286,7 @@ class FileHandler(
             respondStart(sender, sequence, failDownloadStart(req.clientReqId, req.uploadId, FileDownloadStart.Result.NOT_FOUND))
             return
         }
-        if (senderUserId != row.fromUserId && senderUserId != row.toUserId) {
+        if (!canDownload(senderUserId, uploadUuid, row)) {
             respondStart(sender, sequence, failDownloadStart(req.clientReqId, req.uploadId, FileDownloadStart.Result.NOT_ALLOWED))
             return
         }
@@ -300,6 +353,14 @@ class FileHandler(
         }
     }
 
+    /** 업로더·지정 수신자 외에, 방 파일이면 방 멤버, 쪽지 첨부면 그 쪽지의 수신자도 받을 수 있다. */
+    private fun canDownload(userId: String, uploadId: UUID, row: FileRepository.UploadRow): Boolean {
+        if (userId == row.fromUserId || (row.toUserId.isNotEmpty() && userId == row.toUserId)) return true
+        val roomId = row.roomId
+        if (roomId != null) return roomRepository?.isMember(roomId, userId) == true
+        return fileRepository?.isMessageAttachmentParticipant(uploadId, userId) == true
+    }
+
     private suspend fun pushChunk(sender: ClientSession, chunk: FileDownloadChunk) {
         val envelope = Envelope.newBuilder()
             .setSequence(serverSequence.incrementAndGet())
@@ -325,22 +386,33 @@ class FileHandler(
             .setResult(result)
             .build()
 
-    private suspend fun notifyRecipient(state: UploadState) {
-        val recipient = sessions.get(state.toUserId) ?: return
+    private suspend fun notifyRecipient(state: UploadState, ts: Long) {
+        val roomId = state.roomId
+        val targets: List<String> = if (roomId != null) {
+            (roomRepository?.listMembers(roomId) ?: emptyList()).filter { it != state.fromUserId }
+        } else if (state.toUserId == state.fromUserId) {
+            emptyList() // 자기 자신 지정 = 쪽지 첨부용 보관 업로드. 받는 쪽에 파일 수신 알림을 띄우지 않는다.
+        } else {
+            listOf(state.toUserId)
+        }
         val notice = FileAvailableNotification.newBuilder()
             .setUploadId(state.uploadId.toString())
             .setFromUserId(state.fromUserId)
             .setFilename(state.filename)
             .setTotalSize(state.totalSize)
             .setMimeType(state.mimeType)
-            .setServerTs(nowMillis())
+            .setRoomId(roomId?.toString() ?: "")
+            .setServerTs(ts)
             .build()
-        val envelope = Envelope.newBuilder()
-            .setSequence(serverSequence.incrementAndGet())
-            .setFileAvailable(notice)
-            .build()
-        runCatching { recipient.send(Frame.Binary(true, envelope.toByteArray())) }
-            .onFailure { t -> logger.warn("file notify to {} failed", state.toUserId, t) }
+        for (target in targets) {
+            val recipient = sessions.get(target) ?: continue
+            val envelope = Envelope.newBuilder()
+                .setSequence(serverSequence.incrementAndGet())
+                .setFileAvailable(notice)
+                .build()
+            runCatching { recipient.send(Frame.Binary(true, envelope.toByteArray())) }
+                .onFailure { t -> logger.warn("file notify to {} failed", target, t) }
+        }
     }
 
     private suspend fun respond(sender: ClientSession, sequence: Long, ack: FileUploadStartAck) {
@@ -366,6 +438,18 @@ class FileHandler(
             .setServerTs(nowMillis())
             .setResult(result)
             .build()
+
+    internal companion object {
+        /** 방 대화 기록에 남길 파일 메시지 문구. 예: `📎 보고서.pdf (1.2 MB)` */
+        fun roomFileMessageText(filename: String, totalSize: Long): String {
+            val size = when {
+                totalSize < 1024 -> "$totalSize B"
+                totalSize < 1024L * 1024 -> String.format(java.util.Locale.ROOT, "%.1f KB", totalSize / 1024.0)
+                else -> String.format(java.util.Locale.ROOT, "%.1f MB", totalSize / (1024.0 * 1024.0))
+            }
+            return "📎 $filename ($size)"
+        }
+    }
 
     private fun failCompleteAck(clientReqId: String, uploadId: String, totalBytes: Long, result: FileUploadCompleteAck.Result): FileUploadCompleteAck =
         FileUploadCompleteAck.newBuilder()

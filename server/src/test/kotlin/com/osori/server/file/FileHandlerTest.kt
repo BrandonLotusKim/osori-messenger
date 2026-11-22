@@ -30,6 +30,7 @@ class FileHandlerTest {
     private lateinit var storageRoot: Path
     private lateinit var sessions: SessionManager
     private lateinit var fileRepo: FileRepository
+    private lateinit var roomRepo: com.osori.server.db.TalkRoomRepository
     private lateinit var handler: FileHandler
 
     @Before
@@ -40,9 +41,11 @@ class FileHandlerTest {
         userRepo.createIfAbsent("alice", "Alice")
         userRepo.createIfAbsent("bob", "Bob")
         fileRepo = FileRepository(db)
+        roomRepo = com.osori.server.db.TalkRoomRepository(db)
+        userRepo.createIfAbsent("carol", "Carol")
         sessions = SessionManager()
         storageRoot = Files.createTempDirectory("osori-file-handler-test-")
-        handler = FileHandler(sessions, fileRepo, storageRoot)
+        handler = FileHandler(sessions, fileRepo, storageRoot, roomRepository = roomRepo)
     }
 
     @After
@@ -250,6 +253,111 @@ class FileHandlerTest {
         )
         val ack = parseAck(alice, Envelope.PayloadCase.FILE_UPLOAD_START_ACK).fileUploadStartAck
         assertEquals(FileUploadStartAck.Result.INVALID_TARGET, ack.result)
+    }
+
+    private suspend fun startRoomUpload(sender: FakeClientSession, roomId: String, payload: ByteArray): FileUploadStartAck {
+        handler.handleStart(
+            sender, sequence = 1L,
+            req = FileUploadStart.newBuilder()
+                .setClientReqId("room-up")
+                .setRoomId(roomId)
+                .setFilename("room.txt")
+                .setTotalSize(payload.size.toLong())
+                .build(),
+        )
+        return parseAck(sender, Envelope.PayloadCase.FILE_UPLOAD_START_ACK).fileUploadStartAck
+    }
+
+    private suspend fun download(user: FakeClientSession, uploadId: String): FileDownloadStart.Result {
+        user.sentFrames.clear()
+        handler.handleDownloadRequest(
+            user, sequence = 9L,
+            req = FileDownloadRequest.newBuilder().setUploadId(uploadId).setClientReqId("dl").build(),
+        )
+        return parseAck(user, Envelope.PayloadCase.FILE_DOWNLOAD_START).fileDownloadStart.result
+    }
+
+    @Test
+    fun `group room upload notifies every other member and members can download`() = runBlocking {
+        val userRepo = UserRepository(PostgresTestContainer.database())
+        userRepo.createIfAbsent("dave", "Dave")
+        val roomId = roomRepo.createRoom("g", "alice", java.time.Instant.now(), listOf("bob", "carol"))
+        val alice = FakeClientSession().apply { userId = "alice" }
+        val bob = FakeClientSession().apply { userId = "bob" }
+        val carol = FakeClientSession().apply { userId = "carol" }
+        val dave = FakeClientSession().apply { userId = "dave" }
+        sessions.bind("alice", alice); sessions.bind("bob", bob); sessions.bind("carol", carol); sessions.bind("dave", dave)
+
+        val payload = "group file".toByteArray()
+        val ack = startRoomUpload(alice, roomId.toString(), payload)
+        assertEquals(FileUploadStartAck.Result.OK, ack.result)
+        handler.handleChunk(alice, 2L, FileUploadChunk.newBuilder().setUploadId(ack.uploadId).setSeq(0).setData(ByteString.copyFrom(payload)).build())
+        handler.handleComplete(alice, 3L, FileUploadComplete.newBuilder().setUploadId(ack.uploadId).setClientReqId("room-up").build())
+
+        for (m in listOf(bob, carol)) {
+            val n = parseAck(m, Envelope.PayloadCase.FILE_AVAILABLE).fileAvailable
+            assertEquals(roomId.toString(), n.roomId)
+            assertEquals("alice", n.fromUserId)
+            assertEquals(ack.uploadId, n.uploadId)
+            // 대화 기록 메시지도 같은 ID 로 방송된다(파일 알림 뒤에).
+            val r = parseAck(m, Envelope.PayloadCase.TALK_ROOM_RECEIVED).talkRoomReceived
+            assertEquals(ack.uploadId, r.serverTalkId)
+            assertEquals(ack.uploadId, r.attachmentUploadId)
+            assertEquals("📎 room.txt (10 B)", r.text)
+        }
+        // 히스토리에도 남는다.
+        val history = roomRepo.fetchRoomHistory(roomId, 0, 10)
+        assertEquals(1, history.size)
+        assertEquals(ack.uploadId, history[0].attachmentUploadId)
+        assertEquals(ack.uploadId, history[0].serverTalkId.toString())
+        assertEquals("alice", history[0].fromUserId)
+        assertTrue(alice.sentFrames.filterIsInstance<Frame.Binary>().none { Envelope.parseFrom(it.readBytes()).payloadCase == Envelope.PayloadCase.FILE_AVAILABLE })
+        assertTrue(dave.sentFrames.isEmpty())
+
+        assertEquals(FileDownloadStart.Result.OK, download(bob, ack.uploadId))
+        assertEquals(FileDownloadStart.Result.OK, download(carol, ack.uploadId))
+        assertEquals(FileDownloadStart.Result.NOT_ALLOWED, download(dave, ack.uploadId))
+    }
+
+    @Test
+    fun `room file message text formats size`() {
+        assertEquals("📎 a.txt (512 B)", FileHandler.roomFileMessageText("a.txt", 512))
+        assertEquals("📎 a.txt (1.5 KB)", FileHandler.roomFileMessageText("a.txt", 1536))
+        assertEquals("📎 a.txt (2.0 MB)", FileHandler.roomFileMessageText("a.txt", 2L * 1024 * 1024))
+    }
+
+    @Test
+    fun `room upload by non member or unknown room is rejected`() = runBlocking {
+        val userRepo = UserRepository(PostgresTestContainer.database())
+        userRepo.createIfAbsent("dave", "Dave")
+        val roomId = roomRepo.createRoom("g", "alice", java.time.Instant.now(), listOf("bob"))
+        val dave = FakeClientSession().apply { userId = "dave" }
+        assertEquals(FileUploadStartAck.Result.INVALID_TARGET, startRoomUpload(dave, roomId.toString(), "x".toByteArray()).result)
+        dave.sentFrames.clear()
+        assertEquals(FileUploadStartAck.Result.INVALID_TARGET, startRoomUpload(dave, java.util.UUID.randomUUID().toString(), "x".toByteArray()).result)
+        dave.sentFrames.clear()
+        assertEquals(FileUploadStartAck.Result.INVALID_TARGET, startRoomUpload(dave, "not-a-uuid", "x".toByteArray()).result)
+    }
+
+    @Test
+    fun `memo attachment can be downloaded by every recipient but not outsiders`() = runBlocking {
+        val alice = FakeClientSession().apply { userId = "alice" }
+        val bob = FakeClientSession().apply { userId = "bob" }
+        val carol = FakeClientSession().apply { userId = "carol" }
+        sessions.bind("bob", bob)
+        // 쪽지 첨부용 보관 업로드: 자기 자신 지정 -> 알림 없음
+        val uploadId = performUpload(alice, "alice", "memo.txt", "memo".toByteArray())
+        assertTrue(bob.sentFrames.isEmpty())
+        assertEquals(FileDownloadStart.Result.NOT_ALLOWED, download(bob, uploadId))
+
+        val msgRepo = com.osori.server.db.MessageRepository(PostgresTestContainer.database())
+        msgRepo.saveMemo("m1", "alice", listOf("bob", "carol"), "t", "b", java.time.Instant.now(), uploadId)
+        assertEquals(FileDownloadStart.Result.OK, download(bob, uploadId))
+        assertEquals(FileDownloadStart.Result.OK, download(carol, uploadId))
+        val userRepo = UserRepository(PostgresTestContainer.database())
+        userRepo.createIfAbsent("dave", "Dave")
+        val dave = FakeClientSession().apply { userId = "dave" }
+        assertEquals(FileDownloadStart.Result.NOT_ALLOWED, download(dave, uploadId))
     }
 
     private fun parseAck(session: FakeClientSession, expected: Envelope.PayloadCase): Envelope {

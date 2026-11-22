@@ -58,7 +58,8 @@
                     <Button x:Name="MinimizeButton"
                             Style="{StaticResource TitleBarButtonStyle}"
                             ToolTip="최소화"
-                            Click="MinimizeButton_Click">
+                            Click="MinimizeButton_Click"
+        AutomationProperties.Name="최소화">
                         <Viewbox Width="12" Height="12" Stretch="Uniform">
                             <Path Data="{StaticResource IconMinimize}"
                                   Fill="{StaticResource TextSecondaryBrush}" />
@@ -68,7 +69,8 @@
                             Style="{StaticResource TitleBarButtonStyle}"
                             Tag="Close"
                             ToolTip="닫기"
-                            Click="TitleCloseButton_OnClick">
+                            Click="TitleCloseButton_OnClick"
+        AutomationProperties.Name="닫기">
                         <Viewbox Width="12" Height="12" Stretch="Uniform">
                             <Path Data="{StaticResource IconClose}">
                                 <Path.Style>
@@ -126,13 +128,15 @@
                      Height="44"
                      Padding="12,0"
                      Margin="0,0,0,8"
-                     AutomationProperties.AutomationId="LoginUserIdCombo" />
+                     AutomationProperties.AutomationId="LoginUserIdCombo"
+        AutomationProperties.Name="사용자 ID" />
 
             <PasswordBox x:Name="PasswordTextBox"
                          Style="{StaticResource AppPasswordBox}"
                          Height="44"
                          Padding="12,0"
-                         AutomationProperties.AutomationId="LoginPasswordBox" />
+                         AutomationProperties.AutomationId="LoginPasswordBox"
+        AutomationProperties.Name="비밀번호" />
 
             <!-- 큰 로그인 버튼 (카톡 검정 패턴 — 다만 우리 Brand 색 사용) -->
             <Grid Margin="0,16,0,0">
@@ -227,7 +231,8 @@
                          Style="{StaticResource AppTextBox}"
                          Text="127.0.0.1"
                          Margin="0,0,0,8"
-                         AutomationProperties.AutomationId="LoginHostBox" />
+                         AutomationProperties.AutomationId="LoginHostBox"
+        AutomationProperties.Name="서버 주소" />
 
                 <TextBlock Text="포트"
                            Style="{StaticResource LabelText}"
@@ -236,7 +241,8 @@
                          Style="{StaticResource AppTextBox}"
                          Text="7071"
                          Margin="0,0,0,8"
-                         AutomationProperties.AutomationId="LoginPortBox" />
+                         AutomationProperties.AutomationId="LoginPortBox"
+        AutomationProperties.Name="서버 포트" />
 
                 <CheckBox x:Name="UseTlsCheckBox"
                           Content="wss 사용 (자체 서명 허용)"

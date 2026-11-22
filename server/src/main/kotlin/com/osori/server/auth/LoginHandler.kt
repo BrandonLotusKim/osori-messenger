@@ -3,6 +3,7 @@ package com.osori.server.auth
 import com.osori.proto.v1.Envelope
 import com.osori.proto.v1.LoginRequest
 import com.osori.proto.v1.LoginResponse
+import com.osori.proto.v1.SessionClosed
 import com.osori.server.db.UserRepository
 import com.osori.server.talk.TalkOutboxFlusher
 import com.osori.server.session.ClientSession
@@ -177,6 +178,21 @@ class LoginHandler(
         val existing = sessions.bind(req.userId, session)
         if (existing != null && existing !== session) {
             logger.info("중복 로그인으로 기존 세션 종료 userId={}", req.userId)
+            // 끊기 전에 사유를 알려 준다 — 사유 없이 끊으면 기존 클라이언트가 자동 재접속해서
+            // 새 세션을 다시 끊고, 두 곳이 서로를 무한히 끊는 교대가 생긴다.
+            runCatching {
+                val notice = Envelope.newBuilder()
+                    .setSessionClosed(
+                        SessionClosed.newBuilder()
+                            .setReason(SessionClosed.Reason.SUPERSEDED)
+                            .setMessage("다른 곳에서 같은 계정으로 로그인되어 연결이 끊겼습니다.")
+                            .setServerTs(java.time.Instant.now().toEpochMilli())
+                            .build(),
+                    )
+                    .build()
+                existing.send(Frame.Binary(true, notice.toByteArray()))
+            }.onFailure { t -> logger.debug("SessionClosed 통지 실패 userId={}", req.userId, t) }
+            auditRepository?.recordSessionSuperseded(req.userId, existing.id.toString(), session.id.toString())
             runCatching {
                 existing.close(
                     CloseReason(CloseReason.Codes.VIOLATED_POLICY, "already-online"),

@@ -34,7 +34,7 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="수신자 선택"
+                <TextBlock Grid.Column="0" x:Name="HeaderTitleText" Text="수신자 선택"
                            Margin="12,0,0,0"
                            VerticalAlignment="Center"
                            FontWeight="SemiBold" />
@@ -42,7 +42,8 @@
                         Style="{StaticResource TitleBarButtonStyle}"
                         Tag="Close"
                         ToolTip="닫기"
-                        Click="CancelButton_OnClick">
+                        Click="CancelButton_OnClick"
+        AutomationProperties.Name="닫기">
                     <Viewbox Width="12" Height="12">
                         <Path Data="{StaticResource IconClose}">
                             <Path.Style>
@@ -67,8 +68,10 @@
         <Border Grid.Row="1" Padding="12,8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
             <TextBox x:Name="FilterBox"
                      Style="{StaticResource AppTextBox}"
-                     ToolTip="이름/아이디 필터"
-                     TextChanged="FilterBox_OnTextChanged" />
+                     Tag="이름 · 아이디 · 부서 검색"
+                     ToolTip="이름/아이디/부서로 거르기"
+                     TextChanged="FilterBox_OnTextChanged"
+        AutomationProperties.Name="이름 또는 아이디 검색" />
         </Border>
 
         <ListBox Grid.Row="2" x:Name="MemberList"
@@ -99,6 +102,7 @@
                         </Grid.ColumnDefinitions>
                         <CheckBox Grid.Column="0"
                                   IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                                  AutomationProperties.Name="{Binding DisplayName}"
                                   VerticalAlignment="Center" />
                         <TextBlock Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Center"
                                    Text="{Binding DisplayName}" />
@@ -125,7 +129,7 @@
                 <Button Grid.Column="1" Content="취소"
                         Style="{StaticResource SecondaryButton}" Margin="0,0,8,0"
                         Click="CancelButton_OnClick" />
-                <Button Grid.Column="2" Content="확인"
+                <Button Grid.Column="2" x:Name="OkButton" Content="확인"
                         Style="{StaticResource PrimaryButton}"
                         Click="OkButton_OnClick" />
             </Grid>

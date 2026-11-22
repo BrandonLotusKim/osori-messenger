@@ -35,6 +35,7 @@ message Envelope {
     LoginRequest     login_req      = 10;
     LoginResponse    login_res      = 11;
     Logout           logout         = 12;
+    SessionClosed    session_closed = 13;  // 서버가 세션을 끊기 직전에 보내는 사유
 
     // 대화(1:1) 계열
     TalkSend         talk_send      = 20;
@@ -120,6 +121,10 @@ message Envelope {
     // 로그인 시 내 대화방 목록 전체 조회 (레거시 1:1 → Room 전면 이전에 따른 사이드바 복원용)
     TalkRoomListRequest  talk_room_list_req      = 138;
     TalkRoomListResponse talk_room_list_res      = 139;
+
+    // 읽음 처리 — 클라가 "이 방을 여기까지 읽었다"고 보고하면 서버가 방 멤버에게 알린다.
+    TalkRoomReadReport   talk_room_read_report   = 140;
+    TalkRoomReadUpdate   talk_room_read_update   = 141;
   }
 }
 
@@ -153,6 +158,18 @@ message LoginResponse {
 
 message Logout {
   string session_token = 1;
+}
+
+// 서버가 세션을 닫기 직전에 보내는 종료 사유. 클라이언트는 사유에 따라 자동 재접속 여부를 정한다.
+// SUPERSEDED: 같은 계정이 다른 곳에서 로그인함 → 자동 재접속하면 서로를 계속 끊으므로 재접속하지 않는다.
+message SessionClosed {
+  enum Reason {
+    UNKNOWN    = 0;
+    SUPERSEDED = 1;
+  }
+  Reason reason    = 1;
+  string message   = 2;  // 사용자 안내 문구(선택)
+  int64  server_ts = 3;
 }
 
 
@@ -265,6 +282,7 @@ message TalkRoomCreateAck {
     INVALID_NAME       = 2;
     // force=false 인데 동일 구성원(본인 포함) 방이 이미 있는 경우. existing_room_id 에 그 방 id 가 담긴다.
     DUPLICATE_MEMBERS  = 3;
+    RATE_LIMITED       = 4;
     SERVER_ERROR       = 99;
   }
   string client_req_id   = 1;
@@ -322,6 +340,8 @@ message TalkRoomReceived {
   string from_user_id   = 3;
   string text           = 4;
   int64  server_ts      = 5;
+  // 방에 올린 파일을 기록한 메시지면 업로드 ID(이때 server_talk_id 도 같은 값). 일반 메시지는 빈 값.
+  string attachment_upload_id = 6;
 }
 
 
@@ -348,6 +368,30 @@ message TalkRoomHistoryResponse {
   string room_id       = 3;
   repeated TalkRoomReceived talks = 4;
   bool   has_more      = 5;
+  // 현재 멤버별 마지막으로 읽은 시각(읽음 기록이 없는 멤버는 빠짐) — 보낸 메시지의 안 읽은 인원 계산용.
+  repeated TalkRoomReadState read_states = 6;
+}
+
+// ============================================================================
+// 읽음 처리
+// ============================================================================
+message TalkRoomReadState {
+  string user_id      = 1;
+  int64  last_read_ts = 2;  // 이 시각(server_ts, ms) 이하 메시지는 읽음
+}
+
+// 클라 → 서버: 방 창이 활성 상태에서 화면에 보인 마지막 메시지 시각을 보고(응답 없음).
+// 서버는 기존 값보다 클 때만 갱신하고, 갱신되면 온라인 방 멤버에게 TalkRoomReadUpdate 를 보낸다.
+message TalkRoomReadReport {
+  string room_id      = 1;
+  int64  last_read_ts = 2;
+}
+
+// 서버 → 방 멤버: 누군가의 읽음 위치가 앞으로 이동했다.
+message TalkRoomReadUpdate {
+  string room_id      = 1;
+  string user_id      = 2;
+  int64  last_read_ts = 3;
 }
 
 
@@ -369,6 +413,7 @@ message TalkRoomInviteAck {
     ROOM_NOT_FOUND    = 2;
     NOT_MEMBER        = 3;  // 요청한 본인이 이 방 멤버가 아님
     NO_VALID_TARGETS  = 4;  // target_user_ids 가 비었거나 전부 이미 멤버임
+    RATE_LIMITED      = 5;
     SERVER_ERROR      = 99;
   }
   string client_req_id             = 1;
@@ -390,6 +435,7 @@ message TalkRoomLeaveAck {
     OK             = 1;
     ROOM_NOT_FOUND = 2;
     NOT_MEMBER     = 3;
+    RATE_LIMITED   = 4;
     SERVER_ERROR   = 99;
   }
   string client_req_id = 1;
@@ -413,6 +459,7 @@ message TalkRoomRenameAck {
     ROOM_NOT_FOUND = 2;
     NOT_MEMBER     = 3;
     INVALID_NAME   = 4;
+    RATE_LIMITED   = 5;
     SERVER_ERROR   = 99;
   }
   string client_req_id = 1;
@@ -465,6 +512,8 @@ message FileUploadStart {
   string filename      = 3;
   int64  total_size    = 4;
   string mime_type     = 5;
+  // 그룹/1:1 방에 올리는 파일이면 방 ID(이 경우 to_user_id 는 비워도 됨).
+  string room_id       = 6;
 }
 
 message FileUploadStartAck {
@@ -473,6 +522,7 @@ message FileUploadStartAck {
     OK              = 1;
     INVALID_TARGET  = 2;
     FILE_TOO_LARGE  = 3;
+    RATE_LIMITED    = 4;
     SERVER_ERROR    = 99;
   }
   string client_req_id = 1;
@@ -514,6 +564,8 @@ message FileAvailableNotification {
   int64  total_size   = 4;
   string mime_type    = 5;
   int64  server_ts    = 6;
+  // 방에 올린 파일이면 그 방 ID(1:1 파일은 빈 값).
+  string room_id      = 7;
 }
 
 
@@ -673,6 +725,7 @@ message TalkSearchResponse {
   enum Result {
     UNKNOWN      = 0;
     OK           = 1;
+    RATE_LIMITED = 2;
     SERVER_ERROR = 99;
   }
   string                client_req_id = 1;
@@ -681,6 +734,21 @@ message TalkSearchResponse {
   bool                  has_more      = 4;
   int64                 server_ts     = 5;
   Result                result        = 6;
+  // 대화방 메시지 검색 결과(1:1 도 방으로 통합된 이후의 기본 결과). 요청자가 현재 멤버인 방만.
+  // 이 필드가 채워지면 talks(옛 1:1 테이블 결과)는 비어 있다.
+  repeated TalkSearchHit hits         = 7;
+}
+
+// 대화방 검색 결과 1건 — 결과를 누르면 room_id 방을 연다.
+message TalkSearchHit {
+  string          server_talk_id      = 1;
+  string          room_id             = 2;
+  string          room_name           = 3;
+  bool            room_name_is_custom = 4;
+  repeated string member_ids          = 5;
+  string          from_user_id        = 6;
+  string          text                = 7;
+  int64           server_ts           = 8;
 }
 
 
@@ -742,6 +810,7 @@ message MessageSendAck {
     OK               = 1;
     INVALID_REQUEST  = 2;
     PARTIAL_FAILURE  = 3;
+    RATE_LIMITED     = 4;  // 요청 제한(너무 빠르게 보냄)
     SERVER_ERROR     = 99;
   }
   string client_message_id = 1;
