@@ -52,3 +52,7 @@ server/storage/
 
 # ---- DB 백업 (실 데이터 포함 — 절대 커밋 금지, D4) ----
 backups/
+
+# gradle wrapper 는 저장소에 포함
+!gradle/wrapper/gradle-wrapper.jar
+!**/gradle/wrapper/gradle-wrapper.jar
