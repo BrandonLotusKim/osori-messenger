@@ -5,7 +5,7 @@
 
 ![메인 화면](docs/images/main.png)
 
-| 대화 주고받기 | 그룹 방 파일 전송 |
+| 대화 주고받기 | 그룹 방 파일 전송(업로드 진행률) |
 |---|---|
 | ![대화](docs/images/chat.gif) | ![그룹 방 파일 전송](docs/images/group_file.png) |
 
@@ -39,7 +39,7 @@ flowchart LR
 
 ## 품질
 
-- 자동 테스트: 서버 258개(DB·WebSocket 통합 테스트 포함), 클라이언트 127개
+- 자동 테스트: 서버 266개(DB·WebSocket 통합 테스트 포함), 클라이언트 172개
 - GitHub Actions CI: 서버(PostgreSQL 컨테이너 포함)·클라이언트 빌드와 테스트
 - 운영 구성: Docker Compose, DB 백업, 로그 회전, 설치 프로그램(Inno Setup)
 
