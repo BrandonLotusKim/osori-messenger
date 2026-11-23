@@ -940,6 +940,11 @@
                                  MouseDoubleClick="MessageListBox_OnMouseDoubleClick"
                                  KeyDown="MessageListBox_OnKeyDown"
                                  AutomationProperties.AutomationId="MessageListBox">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                    <Setter Property="AutomationProperties.Name" Value="{Binding AccessibleName}" />
+                                </Style>
+                            </ListBox.ItemContainerStyle>
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <Border Padding="14,10" BorderThickness="0,0,0,1" BorderBrush="{StaticResource BorderBrush}">

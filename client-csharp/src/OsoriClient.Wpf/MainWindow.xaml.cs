@@ -1776,8 +1776,22 @@ public sealed class MessageRowVm : System.ComponentModel.INotifyPropertyChanged
             PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(IsRead)));
             PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(UnreadVisibility)));
             PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(IsUnreadInbox)));
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(AccessibleName)));
         }
     }
+
+    /// <summary>화면 읽기·UI 자동화용 이름: "읽지 않음, 보낸 사람, 제목, 첨부 있음, 날짜".</summary>
+    public string AccessibleName =>
+        string.Join(", ", new[]
+        {
+            IsUnreadInbox ? "읽지 않음" : "",
+            CounterpartLabel,
+            Title,
+            HasAttachment ? "첨부 있음" : "",
+            SentAtText,
+        }.Where(s => !string.IsNullOrEmpty(s)));
+
+    public override string ToString() => AccessibleName;
     public Visibility UnreadVisibility => (!IsSentBox && !IsRead) ? Visibility.Visible : Visibility.Collapsed;
 
     /// <summary>받은 쪽지함의 안 읽은 쪽지(제목 강조용).</summary>

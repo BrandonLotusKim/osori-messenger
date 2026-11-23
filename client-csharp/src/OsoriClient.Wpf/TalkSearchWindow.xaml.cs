@@ -51,6 +51,10 @@ public partial class TalkSearchWindow : Window
         /// <summary>본문에서 강조할 검색어.</summary>
         public string Keyword { get; init; } = "";
         public string SenderText => string.IsNullOrEmpty(FromUserId) ? "" : $" · {FromUserId}";
+        /// <summary>화면 읽기·UI 자동화용 이름: "방 이름, 보낸 사람, 본문, 시각".</summary>
+        public string AccessibleName =>
+            string.Join(", ", new[] { Title, FromUserId, Text, TimestampText }.Where(s => !string.IsNullOrEmpty(s)));
+        public override string ToString() => AccessibleName;
     }
 
     private async Task RunSearchAsync()
