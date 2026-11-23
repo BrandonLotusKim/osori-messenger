@@ -1,6 +1,6 @@
 # 오소리 메신저 (Osori Messenger)
 
-사내 메신저를 서버, 클라이언트, 통신 규약까지 처음부터 설계하고 구현한 개인 프로젝트입니다.
+30명 규모 사무실에서 쓰는 Windows 사내 메신저입니다(개인 프로젝트).
 서버는 Kotlin(Ktor), 클라이언트는 C#(.NET 8, WPF), 통신은 WebSocket 위의 Protobuf, 저장소는 PostgreSQL입니다.
 
 ![메인 화면](docs/images/main.png)
