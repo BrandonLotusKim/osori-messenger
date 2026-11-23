@@ -52,8 +52,17 @@ public sealed class OrgTreeNode : INotifyPropertyChanged
             if (_isSelectedForRoom == value) return;
             _isSelectedForRoom = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(AccessibleName));
         }
     }
+
+    /// <summary>
+    /// 화면 낭독기용 이름. 사람이면 접속 상태와 선택 여부까지 말로 전한다(색 점·배경색만으로 구분하지 않게).
+    /// 예: "test8 · 선임연구원, 온라인, 선택됨". 부서는 이름 그대로.
+    /// </summary>
+    public string AccessibleName => Kind == OrgTreeNodeKind.Unit
+        ? DisplayName
+        : $"{DisplayName}, {(IsOnline ? "온라인" : "오프라인")}{(IsSelectedForRoom ? ", 선택됨" : "")}";
 
     // 멤버 접속 상태(서버 PresenceEvent 반영). 클라이언트 UI 상태.
     private bool _isOnline;
@@ -65,6 +74,7 @@ public sealed class OrgTreeNode : INotifyPropertyChanged
             if (_isOnline == value) return;
             _isOnline = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(AccessibleName));
         }
     }
 

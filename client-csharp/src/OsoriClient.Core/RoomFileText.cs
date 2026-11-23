@@ -23,6 +23,31 @@ public static class RoomFileText
         return name.Length == 0 ? null : name;
     }
 
+    public const string DownloadHint = "더블클릭하여 다운로드";
+    public const string SavedHint = "저장 완료 · 더블클릭하면 폴더 열기";
+
+    /// <summary>파일 메시지 첫 줄 <c>📎 이름 (크기)</c> — 서버 기록 문구와 같은 크기 표기.</summary>
+    public static string Head(string fileName, long size) => $"\U0001F4CE {fileName} ({TalkListFormat.FileSize(size)})";
+
+    /// <summary>
+    /// 받은 파일 메시지(기록 포함)에 받는 방법 안내 줄을 붙인다. 이미 둘째 줄이 있거나 파일 메시지가 아니면 그대로.
+    /// </summary>
+    public static string WithDownloadHint(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return text ?? string.Empty;
+        if (ParseFileName(text) is null || text.TrimEnd().Contains('\n')) return text;
+        return $"{text.TrimEnd()}\n{DownloadHint}";
+    }
+
+    public static string Downloading(string fileName, long size, int percent) =>
+        $"{Head(fileName, size)}\n다운로드 중... {Math.Clamp(percent, 0, 100)}%";
+
+    /// <summary>저장 완료 — 로컬 경로는 말풍선에 쓰지 않는다(툴팁·폴더 열기로만).</summary>
+    public static string Saved(string fileName, long size) => $"{Head(fileName, size)}\n{SavedHint}";
+
+    public static string DownloadFailed(string fileName, long size, string reason) =>
+        $"{Head(fileName, size)}\n다운로드 실패: {reason}";
+
     private static readonly Regex SizeSpace = new(@"\((\d+(?:[.,]\d+)?) (B|KB|MB|GB)\)", RegexOptions.CultureInvariant);
 
     /// <summary>

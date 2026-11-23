@@ -254,10 +254,10 @@ fun Application.configureServer(
     val presenceBroadcaster = PresenceBroadcaster(sessions)
     val messageHandler = com.osori.server.message.MessageHandler(
         messageRepository, sessions,
-        attachmentOwnedBy = fileRepository?.let { repo ->
+        attachmentUsableBy = fileRepository?.let { repo ->
             { uploadId: String, userId: String ->
                 val id = runCatching { java.util.UUID.fromString(uploadId) }.getOrNull()
-                id != null && repo.getUpload(id)?.fromUserId == userId
+                id != null && repo.canAttachToMessage(id, userId)
             }
         },
         attachmentInfo = fileRepository?.let { repo ->

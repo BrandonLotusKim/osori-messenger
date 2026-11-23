@@ -383,6 +383,7 @@ class TalkRoomHandler(
                             .setLastMessageTs(it.lastMessageTs?.toEpochMilli() ?: 0L)
                             .setNameIsCustom(it.nameIsCustom)
                             .addAllMemberIds(it.memberIds)
+                            .setUnreadCount(it.unreadCount)
                             .build()
                     },
                 )

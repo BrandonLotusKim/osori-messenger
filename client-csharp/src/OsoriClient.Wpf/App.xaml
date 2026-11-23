@@ -32,6 +32,9 @@
             <SolidColorBrush x:Key="{x:Static SystemColors.InactiveBorderBrushKey}" Color="#FF36383D" />
             <SolidColorBrush x:Key="{x:Static SystemColors.InactiveCaptionBrushKey}" Color="#FF18191C" />
             <SolidColorBrush x:Key="{x:Static SystemColors.ScrollBarBrushKey}" Color="#FF2A2C30" />
+
+            <!-- 설정 "글꼴 크기"가 바꾸는 본문 글자 크기(대화 말풍선·입력칸·쪽지 본문). App.ApplyFontSetting 이 갱신한다. -->
+            <sys:Double xmlns:sys="clr-namespace:System;assembly=mscorlib" x:Key="ChatFontSize">13</sys:Double>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

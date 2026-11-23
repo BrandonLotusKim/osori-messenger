@@ -35,11 +35,11 @@ public partial class MessageRecipientPicker : Window
         // 정작 새로 고른 사람은 조용히(토스트만) 초대돼서 "초대가 안 된 것처럼 보이는데 실제로는
         // 된 것 같다"는 혼란을 일으켰다.
         var exclude = new HashSet<string>(excludeUserIds ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
-        // 같은 부서 멤버끼리 묶이도록 OrgPath 우선 정렬 + 같은 부서 안에선 이름 순
+        // 같은 부서 멤버끼리 묶이도록 OrgPath 우선 정렬 + 같은 부서 안에선 아이디 순서(test7, test9, test10)
         var ordered = Flatten(roots)
             .Where(m => !exclude.Contains(m.UserId))
             .OrderBy(m => m.OrgPath, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(m => m.DisplayName, StringComparer.OrdinalIgnoreCase);
+            .ThenBy(m => m.DisplayName, IdOrder.Instance);
         foreach (var member in ordered)
         {
             member.IsChecked = pre.Contains(member.UserId);
@@ -157,5 +157,8 @@ public partial class MessageRecipientPicker : Window
             }
         }
         public event PropertyChangedEventHandler? PropertyChanged;
+
+        /// <summary>목록 항목 낭독 이름(클래스 이름 대신 "아이디 · 직급").</summary>
+        public override string ToString() => DisplayName;
     }
 }

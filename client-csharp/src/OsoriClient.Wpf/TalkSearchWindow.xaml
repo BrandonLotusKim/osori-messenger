@@ -102,8 +102,8 @@
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
                                 <TextBlock Grid.Row="0" Grid.Column="0" FontWeight="SemiBold" TextTrimming="CharacterEllipsis">
-                                    <Run Text="{Binding Title, Mode=OneWay}" Foreground="{StaticResource BrandBrush}" />
-                                    <Run Text="{Binding SenderText, Mode=OneWay}" Foreground="{StaticResource TextSecondaryBrush}" />
+                                    <!-- 두 Run 사이 줄바꿈은 공백 한 칸이 되어 SenderText 앞 공백과 겹치므로 한 줄에 붙여 쓴다 -->
+                                    <Run Text="{Binding Title, Mode=OneWay}" Foreground="{StaticResource BrandBrush}" /><Run Text="{Binding SenderText, Mode=OneWay}" Foreground="{StaticResource TextSecondaryBrush}" />
                                 </TextBlock>
                                 <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding TimestampText}" Foreground="{StaticResource TextMutedBrush}" />
                                 <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"

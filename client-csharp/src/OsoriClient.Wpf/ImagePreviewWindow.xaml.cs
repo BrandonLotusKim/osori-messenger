@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Windows;
 using System.Windows.Input;
@@ -55,10 +55,5 @@ public partial class ImagePreviewWindow : Window
         catch { /* 무시 */ }
     }
 
-    private static string FormatSize(long b)
-    {
-        if (b < 1024) return $"{b} B";
-        if (b < 1024 * 1024) return $"{b / 1024.0:F1} KB";
-        return $"{b / 1024.0 / 1024.0:F1} MB";
-    }
+    private static string FormatSize(long b) => OsoriClient.Core.TalkListFormat.FileSize(b);
 }

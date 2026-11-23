@@ -108,6 +108,8 @@ open class TalkRoomRepository(private val db: Database) {
         val lastMessageTs: Instant?,
         val nameIsCustom: Boolean,
         val memberIds: List<String>,
+        /** 내가 아직 안 읽은 메시지 수(남이 보낸 것, 읽음 위치가 없으면 입장 시각 이후). */
+        val unreadCount: Int = 0,
     )
 
     /**
@@ -123,7 +125,13 @@ open class TalkRoomRepository(private val db: Database) {
                 SELECT r.room_id, r.name, r.name_is_custom,
                        (SELECT COUNT(*) FROM talk_room_members m2 WHERE m2.room_id = r.room_id) AS member_count,
                        (SELECT array_agg(m3.user_id) FROM talk_room_members m3 WHERE m3.room_id = r.room_id) AS member_ids,
-                       lm.text AS last_text, lm.server_ts AS last_ts
+                       lm.text AS last_text, lm.server_ts AS last_ts,
+                       (SELECT COUNT(*) FROM talk_room_messages um
+                         WHERE um.room_id = r.room_id AND um.from_user_id <> m1.user_id
+                           -- 클라이언트는 ms 단위로 읽음을 보고하므로 비교도 ms 로 자른다
+                           AND date_trunc('milliseconds', um.server_ts) > COALESCE(
+                               (SELECT rr.last_read_ts FROM talk_room_reads rr WHERE rr.room_id = r.room_id AND rr.user_id = m1.user_id),
+                               m1.joined_at)) AS unread_count
                 FROM talk_rooms r
                 JOIN talk_room_members m1 ON m1.room_id = r.room_id AND m1.user_id = ?
                 LEFT JOIN LATERAL (
@@ -148,6 +156,7 @@ open class TalkRoomRepository(private val db: Database) {
                             lastMessageTs = lastTs?.toInstant(),
                             nameIsCustom = rs.getBoolean("name_is_custom"),
                             memberIds = memberIds,
+                            unreadCount = rs.getInt("unread_count"),
                         )
                     }
                     result
@@ -257,9 +266,30 @@ open class TalkRoomRepository(private val db: Database) {
     }
 
     companion object {
+        /** 숫자 부분은 크기로 비교하는 아이디 순서(대소문자 무시). */
+        val naturalIdOrder: Comparator<String> = Comparator { x, y ->
+            var i = 0
+            var j = 0
+            var result = 0
+            while (result == 0 && i < x.length && j < y.length) {
+                if (x[i].isDigit() && y[j].isDigit()) {
+                    val si = i; while (i < x.length && x[i].isDigit()) i++
+                    val sj = j; while (j < y.length && y[j].isDigit()) j++
+                    val a = x.substring(si, i).trimStart('0')
+                    val b = y.substring(sj, j).trimStart('0')
+                    result = if (a.length != b.length) a.length.compareTo(b.length) else a.compareTo(b)
+                } else {
+                    result = x[i].uppercaseChar().compareTo(y[j].uppercaseChar())
+                    i++; j++
+                }
+            }
+            if (result != 0) result else (x.length - i).compareTo(y.length - j).takeIf { it != 0 } ?: x.compareTo(y)
+        }
+
         /** 클라이언트 [MainWindow.ComputeAutoRoomName] 과 동일한 규칙 — 서버가 최종 권위를 가진다. */
         fun computeAutoRoomName(allMemberIds: Collection<String>, ownerUserId: String): String {
-            val others = allMemberIds.filterNot { it == ownerUserId }
+            // 가입 순서가 아니라 사람이 읽는 아이디 순서(test7, test9, test10) — 클라이언트 IdOrder 와 같은 규칙.
+            val others = allMemberIds.filterNot { it == ownerUserId }.distinct().sortedWith(naturalIdOrder)
             return when {
                 others.isEmpty() -> "나와의 대화"
                 others.size <= 3 -> others.joinToString(", ")

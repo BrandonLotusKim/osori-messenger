@@ -142,13 +142,15 @@
             <Grid Margin="0,16,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="8" />
+                    <ColumnDefinition Width="0" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
+                <!-- 간격은 링의 오른쪽 여백으로 — 고정 간격 열이면 링이 숨었을 때도 버튼이 입력칸보다 8px 들어가 정렬이 어긋난다 -->
                 <Control x:Name="ConnectProgress"
                          Grid.Column="0"
                          Style="{StaticResource AppProgressRing}"
                          VerticalAlignment="Center"
+                         Margin="0,0,8,0"
                          AutomationProperties.AutomationId="LoginConnectProgress" />
                 <Button x:Name="ConnectButton"
                         Grid.Column="2"

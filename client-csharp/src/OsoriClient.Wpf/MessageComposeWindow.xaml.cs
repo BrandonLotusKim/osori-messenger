@@ -50,6 +50,8 @@ public partial class MessageComposeWindow : Window
     {
         public string ToolTip => IsKnown ? UserId : $"{UserId} — 조직도에 없는 아이디입니다";
         public string RemoveName => $"{Label} 빼기";
+        /// <summary>칩 낭독 이름(레코드 기본 ToString 대신). 조직도에 없는 아이디면 그 사실도.</summary>
+        public override string ToString() => IsKnown ? Label : $"{Label}, 조직도에 없는 아이디";
     }
 
     private readonly ObservableCollection<RecipientChip> _chips = new();
@@ -159,6 +161,7 @@ public partial class MessageComposeWindow : Window
         if (string.IsNullOrEmpty(path))
         {
             _attachmentPath = null;
+            _forwardedUploadId = null;
             AttachmentChip.Visibility = Visibility.Collapsed;
             return true;
         }
@@ -171,6 +174,7 @@ public partial class MessageComposeWindow : Window
             return false;
         }
         _attachmentPath = path;
+        _forwardedUploadId = null;
         AttachmentNameText.Text = $"{info.Name} ({FormatSize(info.Length)})";
         AttachmentChip.ToolTip = path;
         AttachmentChip.Visibility = Visibility.Visible;
@@ -180,12 +184,7 @@ public partial class MessageComposeWindow : Window
 
     private void RemoveAttachment_OnClick(object sender, RoutedEventArgs e) => SetAttachment(null);
 
-    private static string FormatSize(long bytes) => bytes switch
-    {
-        < 1024 => $"{bytes} B",
-        < 1024 * 1024 => $"{bytes / 1024.0:0.0} KB",
-        _ => $"{bytes / (1024.0 * 1024.0):0.0} MB",
-    };
+    private static string FormatSize(long bytes) => OsoriClient.Core.TalkListFormat.FileSize(bytes);
 
     /// <summary>외부에서 호출 — 받는 사람 칩을 미리 채움 (조직도 우클릭 → 쪽지 보내기 등).</summary>
     public void SetInitialRecipients(System.Collections.Generic.IEnumerable<string> userIds)
@@ -203,6 +202,22 @@ public partial class MessageComposeWindow : Window
             BodyBox.Text = quotedBody;
         }
         Loaded += (_, _) => { BodyBox.Focus(); BodyBox.CaretIndex = 0; };
+    }
+
+    private string? _forwardedUploadId;
+
+    /// <summary>
+    /// 전달할 때 원본 쪽지의 첨부를 그대로 붙인다(다시 올리지 않고 같은 업로드를 가리킴 — 서버가 받은 사람인지 확인).
+    /// 칩의 × 로 빼거나 다른 파일을 첨부하면 바뀐다.
+    /// </summary>
+    public void SetForwardedAttachment(string uploadId, string fileName, long size)
+    {
+        if (string.IsNullOrEmpty(uploadId)) return;
+        _attachmentPath = null;
+        _forwardedUploadId = uploadId;
+        AttachmentNameText.Text = string.IsNullOrEmpty(fileName) ? "원본 첨부파일" : $"{fileName} ({FormatSize(size)})";
+        AttachmentChip.ToolTip = "원본 쪽지의 첨부를 함께 전달합니다";
+        AttachmentChip.Visibility = Visibility.Visible;
     }
 
     private void CloseButton_OnClick(object sender, RoutedEventArgs e) => CancelWithConfirm();
@@ -278,7 +293,7 @@ public partial class MessageComposeWindow : Window
         StatusText.Text = "보내는 중...";
         try
         {
-            string? attachmentId = null;
+            string? attachmentId = _forwardedUploadId;
             if (_attachmentPath is not null)
             {
                 // 쪽지 첨부는 "나 자신"을 받는 사람으로 올려 둔다(서버는 이때 파일 알림을 보내지 않는다).

@@ -73,6 +73,7 @@ public partial class App : Application
             EventManager.RegisterClassHandler(typeof(Window),
                 Window.LoadedEvent,
                 new RoutedEventHandler(OnAnyWindowLoadedOffscreen));
+            DoNotActivateWindowsOnShow();
         }
 
         // 디자인 캡처 덤프 — 모든 Window 가 Loaded 후 N ms 뒤 RenderTargetBitmap 자동 저장
@@ -93,8 +94,96 @@ public partial class App : Application
             w.Left = -5000;
             w.Top = -5000;
             w.Topmost = false;
-            w.ShowInTaskbar = false;
+            // 이미 보이는 창의 ShowInTaskbar 를 바꾸면 창을 다시 띄우면서 활성화될 수 있어 바뀔 때만 바꾼다
+            // (기본값은 DoNotActivateWindowsOnShow 에서 false).
+            if (w.ShowInTaskbar) w.ShowInTaskbar = false;
+            // 화면 밖 창이 클릭·포커스 이동으로 활성 창이 되지 않게 한다(같은 PC 의 다른 앱 입력 보호).
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(w).Handle;
+            if (hwnd != IntPtr.Zero)
+            {
+                var ex = NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GWL_EXSTYLE).ToInt64();
+                NativeMethods.SetWindowLongPtr(hwnd, NativeMethods.GWL_EXSTYLE, new IntPtr(ex | NativeMethods.WS_EX_NOACTIVATE));
+            }
         }
+    }
+
+    /// <summary>
+    /// 화면 밖 캡처 모드에서는 새로 뜨는 창(Show)이 활성 창을 가져가지 않게 한다 —
+    /// 보이지 않는 창이 포커스를 가져가면 같은 PC 에서 작업 중인 사람의 키 입력이 그 창으로 들어간다.
+    /// ShowActivated 기본값을 이 어셈블리의 모든 창 형식에 대해 false 로 바꾼다(첫 인스턴스 생성 전에 호출).
+    /// </summary>
+    private static void DoNotActivateWindowsOnShow()
+    {
+        var windowTypes = typeof(App).Assembly.GetTypes()
+            .Where(t => typeof(Window).IsAssignableFrom(t) && !t.IsAbstract);
+        foreach (var t in windowTypes)
+        {
+            Window.ShowActivatedProperty.OverrideMetadata(t, new FrameworkPropertyMetadata(false));
+            Window.ShowInTaskbarProperty.OverrideMetadata(t, new FrameworkPropertyMetadata(false));
+        }
+        ReturnForegroundToOtherApps();
+    }
+
+    private static NativeMethods.WinEventProc? _foregroundHook;
+
+    /// <summary>
+    /// 화면 밖 캡처 모드 전용 — 자동화 도구의 UI 호출 뒤 WPF 내부 포커스 이동 등으로 이 앱 창이 활성 창이 되면,
+    /// 직전에 쓰던 다른 앱 창으로 즉시 되돌린다. 보이지 않는 창이 다른 앱의 키 입력을 가져가지 않게 하기 위함.
+    /// </summary>
+    private static void ReturnForegroundToOtherApps()
+    {
+        // 같은 PC 에서 함께 띄운 다른 인스턴스(multi)의 창도 "이 앱"으로 본다 — 서로에게 되돌리며 핑퐁하지 않게.
+        var selfName = Process.GetCurrentProcess().ProcessName;
+        bool IsThisApp(IntPtr hwnd)
+        {
+            NativeMethods.GetWindowThreadProcessId(hwnd, out var pid);
+            if (pid == 0) return false;
+            try { return Process.GetProcessById((int)pid).ProcessName == selfName; }
+            catch { return false; }
+        }
+
+        // 되돌릴 대상은 보통 앱 창만 — 항상 위 도구 창(위젯 등)은 SetForegroundWindow 가 먹지 않아 되돌리기가 실패했다.
+        static bool IsNormalAppWindow(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero || !NativeMethods.IsWindow(hwnd) || !NativeMethods.IsWindowVisible(hwnd)) return false;
+            var ex = NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GWL_EXSTYLE).ToInt64();
+            return (ex & (NativeMethods.WS_EX_TOOLWINDOW | NativeMethods.WS_EX_NOACTIVATE)) == 0;
+        }
+        var recent = new System.Collections.Generic.List<IntPtr>();
+        void Remember(IntPtr hwnd)
+        {
+            if (!IsNormalAppWindow(hwnd)) return;
+            recent.Remove(hwnd);
+            recent.Insert(0, hwnd);
+            if (recent.Count > 5) recent.RemoveAt(recent.Count - 1);
+        }
+
+        // 시작 시 전경이 도구 창이면 기억할 앱 창이 없으므로, 화면 위쪽(Z 순서)부터 첫 번째 보통 앱 창을 기억해 둔다.
+        NativeMethods.EnumWindows((h, _) =>
+        {
+            if (IsNormalAppWindow(h) && !NativeMethods.IsIconic(h) && !IsThisApp(h)) { Remember(h); return false; }
+            return true;
+        }, IntPtr.Zero);
+        var current = NativeMethods.GetForegroundWindow();
+        if (current != IntPtr.Zero && !IsThisApp(current)) Remember(current);
+
+        _foregroundHook = (_, _, hwnd, _, _, _, _) =>
+        {
+            if (!IsThisApp(hwnd))
+            {
+                Remember(hwnd);
+                return;
+            }
+            // 최근 쓰던 앱 창부터 차례로 시도해, 전경이 이 앱에서 벗어나면 멈춘다.
+            foreach (var target in recent.ToArray())
+            {
+                if (!IsNormalAppWindow(target)) { recent.Remove(target); continue; }
+                NativeMethods.SetForegroundWindow(target);
+                if (!IsThisApp(NativeMethods.GetForegroundWindow())) break;
+            }
+        };
+        NativeMethods.SetWinEventHook(NativeMethods.EVENT_SYSTEM_FOREGROUND, NativeMethods.EVENT_SYSTEM_FOREGROUND,
+            IntPtr.Zero, _foregroundHook, 0, 0, NativeMethods.WINEVENT_OUTOFCONTEXT);
     }
 
     private static void OnAnyWindowLoadedCaptureDump(object sender, RoutedEventArgs e)
@@ -164,12 +253,18 @@ public partial class App : Application
         catch { /* 다크 타이틀바 실패는 시각만 영향 */ }
     }
 
+    /// <summary>캡처·검증 모드 출력 폴더: OSORI_CAPTURE_DIR 환경변수, 없으면 클라이언트 데이터 폴더 아래 captures.</summary>
+    private static string CaptureDir =>
+        Environment.GetEnvironmentVariable("OSORI_CAPTURE_DIR") is { Length: > 0 } d
+            ? d
+            : System.IO.Path.Combine(OsoriClient.Core.ClientPaths.BaseDir, "captures");
+
     private static void VerifyLog(string msg)
     {
         try
         {
-            System.IO.Directory.CreateDirectory(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "osori_caps"));
-            System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "osori_caps", "verify.log"),
+            System.IO.Directory.CreateDirectory(CaptureDir);
+            System.IO.File.AppendAllText(System.IO.Path.Combine(CaptureDir, "verify.log"),
                 $"[{DateTime.Now:HH:mm:ss.fff}] {msg}{Environment.NewLine}");
         }
         catch { /* 무시 */ }
@@ -209,7 +304,7 @@ public partial class App : Application
                     {
                         g.CopyFromScreen(rect.Left, rect.Top, 0, 0, new System.Drawing.Size(width, height));
                     }
-                    var dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "osori_caps");
+                    var dir = CaptureDir;
                     System.IO.Directory.CreateDirectory(dir);
                     var path = System.IO.Path.Combine(dir, $"verify_{label}_{DateTime.Now:HHmmss}.png");
                     bmp.Save(path);
@@ -266,7 +361,7 @@ public partial class App : Application
                 rtb.Render(w);
                 var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
                 enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(rtb));
-                var dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "osori_caps");
+                var dir = CaptureDir;
                 System.IO.Directory.CreateDirectory(dir);
                 var ts = DateTime.Now.ToString("HHmmss_fff");
                 var name = $"{w.GetType().Name}_{delayMs}_{ts}.png";
@@ -480,6 +575,13 @@ public partial class App : Application
         }
     }
 
+    /// <summary>설정 "글꼴 크기"를 열려 있는 창과 앞으로 열 창의 본문 글자 크기(ChatFontSize)에 반영한다.</summary>
+    public static void ApplyFontSetting(int settingSize)
+    {
+        if (Current is null) return;
+        Current.Resources["ChatFontSize"] = OsoriClient.Core.DisplayFont.Body(settingSize);
+    }
+
     /// <summary>
     ///: 시스템 트레이 풍선 알림(Win 10 이상 자동 토스트 변환).
     /// 호출자가 IsActive 등 활성 창 여부를 미리 판단해 호출.
@@ -647,5 +749,43 @@ public partial class App : Application
 
         [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
         public static extern bool DestroyIcon(IntPtr hIcon);
+
+        public const int GWL_EXSTYLE = -20;
+        public const long WS_EX_NOACTIVATE = 0x08000000L;
+        public const long WS_EX_TOOLWINDOW = 0x00000080L;
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern bool IsIconic(IntPtr hWnd);
+
+        public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern bool EnumWindows(EnumWindowsProc proc, IntPtr lParam);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+        public static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
+        public static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+        public const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
+        public const uint WINEVENT_OUTOFCONTEXT = 0x0000;
+
+        public delegate void WinEventProc(IntPtr hook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint thread, uint time);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr hmod, WinEventProc proc, uint idProcess, uint idThread, uint flags);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern IntPtr GetForegroundWindow();
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern bool IsWindow(IntPtr hWnd);
     }
 }

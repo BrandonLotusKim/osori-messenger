@@ -24,8 +24,11 @@ private val logger = LoggerFactory.getLogger("com.osori.server.MessageHandler")
 class MessageHandler(
     private val repo: MessageRepository?,
     private val sessions: SessionManager,
-    /** (uploadId, userId) → 그 사용자가 올린 업로드인지. null 이면 검사하지 않음(메모리 모드·옛 테스트). */
-    private val attachmentOwnedBy: ((String, String) -> Boolean)? = null,
+    /**
+     * (uploadId, userId) → 그 사용자가 이 업로드를 쪽지에 붙일 수 있는지: 본인이 올렸거나, 그 파일이 붙은 쪽지를
+     * 받은 사람(전달). null 이면 검사하지 않음(메모리 모드·옛 테스트).
+     */
+    private val attachmentUsableBy: ((String, String) -> Boolean)? = null,
     /** uploadId → (파일 이름, 크기). 실시간 푸시에 첨부 정보를 싣는 데 쓴다. null 이면 빈 값. */
     private val attachmentInfo: ((String) -> Pair<String, Long>?)? = null,
 ) {
@@ -55,8 +58,9 @@ class MessageHandler(
         val sentAt = Instant.now()
         val sentAtMs = sentAt.toEpochMilli()
         val attachId = req.attachmentUploadId.ifEmpty { null }
-        // 첨부는 보낸 사람 본인이 올린 파일만 — 남의 업로드 ID 를 붙여 수신자에게 다운로드 권한을 넘기는 것을 막는다.
-        if (attachId != null && attachmentOwnedBy != null && !attachmentOwnedBy.invoke(attachId, userId)) {
+        // 첨부는 본인이 올렸거나 이미 받을 권한이 있는(그 첨부가 달린 쪽지를 받은) 파일만 — 관계없는 남의 업로드 ID 를
+        // 붙여 수신자에게 다운로드 권한을 넘기는 것은 막고, 받은 쪽지를 첨부째 전달하는 것은 허용한다.
+        if (attachId != null && attachmentUsableBy != null && !attachmentUsableBy.invoke(attachId, userId)) {
             sendSendAck(session, sequence, req.clientMessageId, "", 0, MessageSendAck.Result.INVALID_REQUEST, emptyList())
             return
         }
@@ -103,6 +107,7 @@ class MessageHandler(
                         .setAttachmentUploadId(attachId ?: "")
                         .setAttachmentFilename(attachMeta?.first ?: "")
                         .setAttachmentSize(attachMeta?.second ?: 0L)
+                        .addAllRecipientIds(deliverables.sorted())
                         .setReadAt(0)
                         .build(),
                 )
@@ -225,6 +230,7 @@ class MessageHandler(
                         .setAttachmentUploadId(row.attachmentUploadId ?: "")
                         .setAttachmentFilename(row.attachmentFilename ?: "")
                         .setAttachmentSize(row.attachmentSize)
+                        .addAllRecipientIds(row.recipientIds)
                         .setReadAt(0)
                         .build(),
                 )

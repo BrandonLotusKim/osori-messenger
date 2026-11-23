@@ -48,6 +48,26 @@ public sealed class TalkMessageRow : INotifyPropertyChanged
     /// <summary>방에 올린 파일 메시지면 업로드 ID — 더블클릭/Enter 로 내려받는다.</summary>
     public string? AttachmentUploadId { get; set; }
 
+    private string? _savedPath;
+
+    /// <summary>내려받아 저장한 위치(말풍선에는 쓰지 않고 툴팁·폴더 열기에만 쓴다).</summary>
+    public string? SavedPath
+    {
+        get => _savedPath;
+        set
+        {
+            if (_savedPath == value) return;
+            _savedPath = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(BubbleToolTip));
+        }
+    }
+
+    /// <summary>말풍선 툴팁: 보낸 시각, 저장한 파일이면 저장 위치도.</summary>
+    public string BubbleToolTip => string.IsNullOrEmpty(_savedPath)
+        ? AbsoluteTimestampText
+        : $"{AbsoluteTimestampText}\n저장 위치: {_savedPath}";
+
     private int? _unreadCount;
 
     /// <summary>내가 보낸 방 메시지를 아직 안 읽은 인원(null = 표시 안 함).</summary>
@@ -100,6 +120,7 @@ public sealed class TalkMessageRow : INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(TimestampText));
             OnPropertyChanged(nameof(AbsoluteTimestampText));
+            OnPropertyChanged(nameof(BubbleToolTip));
         }
     }
 
@@ -135,8 +156,12 @@ public sealed class TalkMessageRow : INotifyPropertyChanged
             _status = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(StatusIcon));
+            OnPropertyChanged(nameof(StatusToolTip));
         }
     }
+
+    /// <summary>상태 아이콘 툴팁·낭독 문구(내 메시지만). 실패면 재전송 방법도 알려 준다.</summary>
+    public string StatusToolTip => IsMine ? TalkMessageText.StatusToolTip(_status) : string.Empty;
 
     public string TimestampText => _serverTs > 0
         ? DateTimeOffset.FromUnixTimeMilliseconds(_serverTs).ToLocalTime().ToString("HH:mm")

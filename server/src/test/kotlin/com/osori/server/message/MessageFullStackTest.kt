@@ -3,6 +3,7 @@ package com.osori.server.message
 import com.osori.proto.v1.*
 import com.osori.server.app.configureServer
 import com.osori.server.auth.AuthMode
+import com.osori.server.db.FileRepository
 import com.osori.server.db.MessageRepository
 import com.osori.server.db.TalkRepository
 import com.osori.server.db.OrganizationRepository
@@ -195,6 +196,76 @@ class MessageFullStackTest {
             assertEquals(listOf("test2", "test3"), entry.recipientIdsList.sorted())
             close(CloseReason(CloseReason.Codes.NORMAL, "done"))
         }
+    }
+
+    @Test
+    fun `받은 쪽지의 첨부는 전달할 수 있고 관계없는 사람은 붙일 수 없다 + 미배달 푸시에 전체 수신자가 실린다`() = testApplication {
+        val db = PostgresTestContainer.database()
+        UserRepository(db).createIfAbsent("test4", "Dave")
+        val files = FileRepository(db)
+        val uploadId = files.createUpload(fromUserId = "test1", toUserId = "", filename = "note.txt",
+            mimeType = "text/plain", totalSize = 10, storagePath = "unused")
+        files.markComplete(uploadId)
+        application {
+            configureServer(
+                userRepository = UserRepository(db),
+                talkRepository = TalkRepository(db),
+                talkRoomRepository = TalkRoomRepository(db),
+                fileRepository = files,
+                orgRepository = OrganizationRepository(db),
+                pushTokenRepository = PushTokenRepository(db),
+                messageRepository = MessageRepository(db),
+                authMode = AuthMode.OPEN,
+            )
+        }
+        val client = createClient { install(ClientWebSockets) }
+
+        // 관계없는 test4 가 남의 업로드를 붙이면 거절
+        client.webSocket("/ws") {
+            login("test4")
+            send(Frame.Binary(true, Envelope.newBuilder().setSequence(2).setMessageSend(
+                MessageSend.newBuilder().setClientMessageId("c-x").setTitle("가로채기").addRecipientIds("test3")
+                    .setAttachmentUploadId(uploadId.toString()).build()
+            ).build().toByteArray()))
+            val ack = receiveUntil(Envelope.PayloadCase.MESSAGE_SEND_ACK)
+            assertEquals(MessageSendAck.Result.INVALID_REQUEST, ack.messageSendAck.result)
+            close(CloseReason(CloseReason.Codes.NORMAL, "done"))
+        }
+
+        // test1 → test2, test3 첨부 쪽지 (둘 다 오프라인)
+        client.webSocket("/ws") {
+            login("test1")
+            send(Frame.Binary(true, Envelope.newBuilder().setSequence(2).setMessageSend(
+                MessageSend.newBuilder().setClientMessageId("c-a").setTitle("자료").addRecipientIds("test3").addRecipientIds("test2")
+                    .setAttachmentUploadId(uploadId.toString()).build()
+            ).build().toByteArray()))
+            assertEquals(MessageSendAck.Result.OK, receiveUntil(Envelope.PayloadCase.MESSAGE_SEND_ACK).messageSendAck.result)
+            close(CloseReason(CloseReason.Codes.NORMAL, "done"))
+        }
+
+        // test2 로그인 → 미배달 푸시에 전체 수신자, 이어서 같은 첨부로 test4 에게 전달
+        client.webSocket("/ws") {
+            login("test2")
+            val push = receiveUntil(Envelope.PayloadCase.MESSAGE_RECEIVED)
+            assertEquals(listOf("test2", "test3"), push.messageReceived.recipientIdsList)
+            assertEquals("note.txt", push.messageReceived.attachmentFilename)
+            send(Frame.Binary(true, Envelope.newBuilder().setSequence(3).setMessageSend(
+                MessageSend.newBuilder().setClientMessageId("c-f").setTitle("전달: 자료").addRecipientIds("test4")
+                    .setAttachmentUploadId(uploadId.toString()).build()
+            ).build().toByteArray()))
+            assertEquals(MessageSendAck.Result.OK, receiveUntil(Envelope.PayloadCase.MESSAGE_SEND_ACK).messageSendAck.result)
+            close(CloseReason(CloseReason.Codes.NORMAL, "done"))
+        }
+
+        // test4 는 전달받은 쪽지로 첨부를 받을 권한이 생긴다
+        client.webSocket("/ws") {
+            login("test4")
+            val push = receiveUntil(Envelope.PayloadCase.MESSAGE_RECEIVED)
+            assertEquals("test2", push.messageReceived.fromUserId)
+            assertEquals(uploadId.toString(), push.messageReceived.attachmentUploadId)
+            close(CloseReason(CloseReason.Codes.NORMAL, "done"))
+        }
+        assertTrue(files.isMessageAttachmentParticipant(uploadId, "test4"))
     }
 
     // ───── helpers ─────

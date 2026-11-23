@@ -22,7 +22,8 @@ REM ============== Inno Setup 자동 탐색 ==============
 set ISCC=
 if exist "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" set ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe
 if exist "C:\Program Files\Inno Setup 6\ISCC.exe"        set ISCC=C:\Program Files\Inno Setup 6\ISCC.exe
-if exist "<repo>\.tools\InnoSetup6\ISCC.exe"           set ISCC=<repo>\.tools\InnoSetup6\ISCC.exe
+REM 휴대용 설치본 등 다른 위치는 ISCC_PATH 환경변수로 지정
+if defined ISCC_PATH if exist "%ISCC_PATH%" set ISCC=%ISCC_PATH%
 if "%ISCC%"=="" (
     echo [ERROR] Inno Setup 6 가 설치되어 있지 않습니다.
     echo         https://jrsoftware.org/isdl.php 에서 Inno Setup 6 설치 후 재실행.

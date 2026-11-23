@@ -76,7 +76,7 @@ class MessageHandlerTest {
         justRun { repo.saveMemo(any(), any(), any(), any(), any(), any(), any()) }
         every { repo.markDelivered(any(), any()) } returns 1
         val owned = mapOf("up-alice" to "alice", "up-bob" to "bob")
-        val handler = MessageHandler(repo = repo, sessions = SessionManager(), attachmentOwnedBy = { id, user -> owned[id] == user })
+        val handler = MessageHandler(repo = repo, sessions = SessionManager(), attachmentUsableBy = { id, user -> owned[id] == user })
         val sender = FakeClientSession().apply { userId = "alice" }
 
         handler.handleSend(sender, 1L, MessageSend.newBuilder().setClientMessageId("c1").setTitle("t")

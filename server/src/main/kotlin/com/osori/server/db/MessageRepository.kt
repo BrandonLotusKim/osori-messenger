@@ -253,7 +253,9 @@ open class MessageRepository(private val db: Database) {
                        extract(epoch from m.sent_at)*1000 AS sent_ms,
                        m.attachment_upload_id,
                        $ATTACH_NAME_SQL,
-                       $ATTACH_SIZE_SQL
+                       $ATTACH_SIZE_SQL,
+                       (SELECT string_agg(mr2.recipient_id, ',' ORDER BY mr2.recipient_id)
+                          FROM message_recipients mr2 WHERE mr2.server_message_id = m.server_message_id) AS recipients
                 FROM message_recipients mr
                 JOIN messages m ON m.server_message_id = mr.server_message_id
                 WHERE mr.recipient_id = ?
@@ -273,7 +275,7 @@ open class MessageRepository(private val db: Database) {
                             MemoRow(
                                 serverMessageId = rs.getString(1),
                                 fromUserId = rs.getString(2),
-                                recipientIds = listOf(userId),
+                                recipientIds = rs.getString(9)?.takeIf { it.isNotEmpty() }?.split(',') ?: listOf(userId),
                                 title = rs.getString(3),
                                 body = rs.getString(4),
                                 sentAtMillis = (rs.getObject(5) as Number).toLong(),

@@ -246,6 +246,34 @@ class TalkRoomRepositoryIntegrationTest {
     }
 
     @Test
+    fun `computeAutoRoomName orders ids naturally so test10 comes after test9`() {
+        assertEquals(
+            "test7, test9, test10",
+            TalkRoomRepository.computeAutoRoomName(listOf("test8", "test10", "test9", "test7"), "test8"),
+        )
+        assertEquals("test2 외 4명", TalkRoomRepository.computeAutoRoomName(listOf("test10", "test1", "test2", "test3", "test11"), "test1"))
+    }
+
+    @Test
+    fun `findRoomsForUser counts unread messages from others after my read position`() {
+        val t0 = Instant.now().minusSeconds(60).truncatedTo(java.time.temporal.ChronoUnit.MILLIS)
+        val room = repo.createRoom("alice, bob", "alice", t0, listOf("bob"))
+        repo.insertRoomTalk(room, "bob", "하나", t0.plusSeconds(1))
+        repo.insertRoomTalk(room, "bob", "둘", t0.plusSeconds(2))
+        repo.insertRoomTalk(room, "bob", "셋", t0.plusSeconds(3))
+        repo.insertRoomTalk(room, "alice", "답장", t0.plusSeconds(4))
+
+        assertEquals(3, repo.findRoomsForUser("alice").single { it.roomId == room }.unreadCount)
+        assertEquals(1, repo.findRoomsForUser("bob").single { it.roomId == room }.unreadCount)
+
+        // 읽음 위치(둘째 메시지 시각, ms) 이후의 남 메시지만 남는다 — 내가 보낸 "답장"은 세지 않는다
+        repo.advanceLastRead(room, "alice", t0.plusSeconds(2))
+        assertEquals(1, repo.findRoomsForUser("alice").single { it.roomId == room }.unreadCount)
+        repo.advanceLastRead(room, "alice", t0.plusSeconds(3))
+        assertEquals(0, repo.findRoomsForUser("alice").single { it.roomId == room }.unreadCount)
+    }
+
+    @Test
     fun `computeAutoRoomName matches the user-reported example of 8 total members needing 외 7명`() {
         val eight = listOf("alice", "bob", "carol", "dave", "eve", "frank", "grace", "heidi")
         assertEquals("bob 외 7명", TalkRoomRepository.computeAutoRoomName(eight, "alice"))

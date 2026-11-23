@@ -27,6 +27,9 @@ public partial class MessageDetailWindow : Window
 {
     private readonly MessengerClient _client;
     private readonly MessageRowVm _row;
+
+    /// <summary>보고 있는 쪽지(전달 시 첨부를 이어 붙이는 데 쓴다).</summary>
+    public MessageRowVm Row => _row;
     private readonly bool _isSentBox;
     private readonly string _myUserId;
     public bool WasDeleted { get; private set; }
@@ -151,9 +154,17 @@ public partial class MessageDetailWindow : Window
         ? "첨부파일 1개"
         : $"{_row.AttachmentFilename} ({TalkListFormat.FileSize(_row.AttachmentSize)})";
 
+    private string? _savedPath;
+
     private async void AttachmentDownloadButton_OnClick(object sender, RoutedEventArgs e)
     {
         if (string.IsNullOrEmpty(_row.AttachmentUploadId)) return;
+        // 이미 저장했으면 다시 받지 않고 저장 폴더를 연다(사용자가 직접 누른 동작일 때만 탐색기를 연다).
+        if (_savedPath is not null && System.IO.File.Exists(_savedPath))
+        {
+            System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{_savedPath}\"");
+            return;
+        }
         AttachmentDownloadButton.IsEnabled = false;
         var progress = new Progress<MessengerClient.DownloadProgress>(p =>
         {
@@ -171,8 +182,12 @@ public partial class MessageDetailWindow : Window
                 return;
             }
             await System.IO.File.WriteAllBytesAsync(save.FileName, file.Bytes);
-            AttachmentStatusText.Text = $"저장됨: {save.FileName}";
-            System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{save.FileName}\"");
+            // 로컬 경로는 화면 문구에 쓰지 않고 툴팁으로만 보여 준다.
+            _savedPath = save.FileName;
+            AttachmentStatusText.Text = $"{AttachmentLabel()} · 저장 완료";
+            AttachmentStatusText.ToolTip = $"저장 위치: {save.FileName}";
+            AttachmentDownloadButtonText.Text = "폴더 열기";
+            System.Windows.Automation.AutomationProperties.SetName(AttachmentDownloadButton, "저장 폴더 열기");
         }
         catch (Exception ex)
         {

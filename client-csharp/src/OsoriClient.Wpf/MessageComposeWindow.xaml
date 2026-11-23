@@ -170,6 +170,7 @@
             <TextBox Grid.Row="1" x:Name="BodyBox"
                      Style="{StaticResource AppTextBox}"
                      Padding="10,6"
+                     FontSize="{DynamicResource ChatFontSize}"
                      Height="Auto"
                      VerticalContentAlignment="Top"
                      AcceptsReturn="True"

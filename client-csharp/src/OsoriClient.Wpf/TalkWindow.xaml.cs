@@ -160,7 +160,7 @@ public partial class TalkWindow : Window
         {
             HeaderMemberButton.Visibility = Visibility.Visible;
             ApplyGroupHeaderAvatar();
-            HeaderMetaText.Text = "그룹 채팅";
+            HeaderMetaText.Text = "그룹 대화";
             return;
         }
 
@@ -257,7 +257,8 @@ public partial class TalkWindow : Window
     private void InviteCounterpartButton_OnClick(object sender, RoutedEventArgs e)
     {
         if (_orgRoots is null) return;
-        var picker = new MessageRecipientPicker(_orgRoots, Array.Empty<string>()) { Owner = this };
+        var picker = new MessageRecipientPicker(_orgRoots, Array.Empty<string>(), excludeUserIds: new[] { _currentUserId }) { Owner = this };
+        picker.SetPurpose("대화 상대 선택", "대화 시작", "대화할 사람을 골라 주세요");
         if (picker.ShowDialog() != true) return;
 
         var targets = picker.SelectedUserIds
@@ -283,7 +284,16 @@ public partial class TalkWindow : Window
     {
         ResetUnreadState();
         TryReportRead();
+        // 비활성일 때 온 파일은 묻지 않고 쌓아 두었다가, 사용자가 이 창으로 돌아오면 그때 묻는다.
+        if (_pendingFileOffers.Count > 0)
+        {
+            var (offer, row) = _pendingFileOffers.Dequeue();
+            _ = Dispatcher.BeginInvoke(() => _ = HandleFileOfferAsync(offer, row));
+        }
     }
+
+    /// <summary>창이 비활성일 때 받은 파일 알림 — 모달 질문 창이 다른 앱의 포커스를 가져가지 않게 미뤄 둔다.</summary>
+    private readonly Queue<(FileAvailableNotification Offer, TalkMessageRow Row)> _pendingFileOffers = new();
 
     private async Task LoadRoomInfoAsync()
     {
@@ -483,6 +493,7 @@ public partial class TalkWindow : Window
                 Direction = MessageDirection.Received,
                 Status = TalkMessageStatus.Received,
             };
+            if (row.AttachmentUploadId is not null) row.Text = RoomFileText.WithDownloadHint(row.Text);
 
             HandleIncomingRow(row);
             // 보낸 사람은 자기 메시지까지 읽은 것 → 내 이전 메시지의 안 읽은 인원이 줄 수 있다.
@@ -648,6 +659,18 @@ public partial class TalkWindow : Window
         var item = new TalkMessageItem(row);
         _messages.Add(item);
         RefreshDateSeparatorAt(_messages.Count - 1);
+        if (row.ServerTs <= 0)
+        {
+            // 보내는 중인 내 메시지는 서버 시각이 나중에 정해진다 — 그때 묶음·시각 표시를 다시 계산.
+            void OnTs(object? s, PropertyChangedEventArgs a)
+            {
+                if (a.PropertyName != nameof(TalkMessageRow.ServerTs) || row.ServerTs <= 0) return;
+                row.PropertyChanged -= OnTs;
+                var idx = _messages.IndexOf(item);
+                if (idx >= 0) RefreshDateSeparatorRange(idx, idx + 1);
+            }
+            row.PropertyChanged += OnTs;
+        }
     }
 
     /// <summary>
@@ -722,6 +745,14 @@ public partial class TalkWindow : Window
         var prev = index > 0 ? _messages[index - 1].Row : null;
         item.IsContinuation = MessageGrouping.IsContinuation(
             prev?.Sender, prev?.ServerTs ?? 0, item.Row.Sender, item.Row.ServerTs, showDateSeparator);
+
+        // 시각은 같은 사람·같은 분 묶음의 마지막에만 — 이 항목과 바로 앞 항목을 다시 계산한다.
+        var next = index + 1 < _messages.Count ? _messages[index + 1].Row : null;
+        item.ShowTime = MessageGrouping.ShowsTime(item.Row.Sender, item.Row.ServerTs, next?.Sender, next?.ServerTs ?? 0);
+        if (prev is not null)
+        {
+            _messages[index - 1].ShowTime = MessageGrouping.ShowsTime(prev.Sender, prev.ServerTs, item.Row.Sender, item.Row.ServerTs);
+        }
     }
 
     /// <summary>위쪽에 이전 메시지를 끼워 넣은 뒤: 끼워 넣은 항목들과 원래 첫 항목의 구분선·묶음을 다시 계산.</summary>
@@ -782,6 +813,18 @@ public partial class TalkWindow : Window
         TalkMessagesListBox.ScrollIntoView(_messages[^1]);
     }
 
+    /// <summary>
+    /// 말풍선 항목은 Focusable=False 라 WPF 기본 클릭 선택(항목에 포커스를 줘야 선택됨)이 일어나지 않는다.
+    /// 클릭한 항목을 직접 선택하고 목록 자체에 포커스를 둬서, 이어지는 위/아래·Enter 키와 더블클릭이 그 항목을 대상으로 하게 한다.
+    /// </summary>
+    private void TalkMessagesListBox_OnPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is not DependencyObject source) return;
+        if (ItemsControl.ContainerFromElement(TalkMessagesListBox, source) is not ListBoxItem container) return;
+        container.IsSelected = true;
+        TalkMessagesListBox.Focus();
+    }
+
     private void TalkMessagesListBox_OnMouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
         // 목록 항목은 TalkMessageItem(날짜 구분선 등 포함 래퍼) — 실제 메시지는 Row.
@@ -791,6 +834,16 @@ public partial class TalkWindow : Window
 
     private void TalkMessagesListBox_OnKeyDown(object sender, KeyEventArgs e)
     {
+        // 말풍선 항목은 포커스를 받지 않으므로(입력칸 포커스 유지) 위/아래 키로 목록에서 직접 선택을 옮긴다.
+        if (e.Key is Key.Up or Key.Down && _messages.Count > 0)
+        {
+            var i = TalkMessagesListBox.SelectedIndex;
+            i = i < 0 ? _messages.Count - 1 : Math.Clamp(i + (e.Key == Key.Up ? -1 : 1), 0, _messages.Count - 1);
+            TalkMessagesListBox.SelectedIndex = i;
+            TalkMessagesListBox.ScrollIntoView(_messages[i]);
+            e.Handled = true;
+            return;
+        }
         if (e.Key == Key.Enter && TalkMessagesListBox.SelectedItem is TalkMessageItem { Row: var row } && row.AttachmentUploadId is not null)
         {
             e.Handled = true;
@@ -803,6 +856,12 @@ public partial class TalkWindow : Window
     {
         var uploadId = row.AttachmentUploadId;
         if (string.IsNullOrEmpty(uploadId)) return;
+        // 이미 저장한 파일이면 다시 받지 않고 저장 폴더를 연다(사용자가 직접 고른 동작).
+        if (!string.IsNullOrEmpty(row.SavedPath) && System.IO.File.Exists(row.SavedPath))
+        {
+            System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{row.SavedPath}\"");
+            return;
+        }
         var notice = new FileAvailableNotification
         {
             UploadId = uploadId,
@@ -927,11 +986,14 @@ public partial class TalkWindow : Window
 
     private TalkMessageRow BuildRoomHistoryRow(TalkRoomReceived msg)
     {
-        return new TalkMessageRow(msg, isHistory: true)
+        var row = new TalkMessageRow(msg, isHistory: true)
         {
             Direction = msg.FromUserId == _currentUserId ? MessageDirection.Sent : MessageDirection.Received,
             Status = msg.FromUserId == _currentUserId ? TalkMessageStatus.Delivered : TalkMessageStatus.Received,
         };
+        // 받은 파일 기록에도 실시간 알림 행과 같은 "더블클릭하여 다운로드" 안내를 붙인다.
+        if (!row.IsMine && row.AttachmentUploadId is not null) row.Text = RoomFileText.WithDownloadHint(row.Text);
+        return row;
     }
 
     private async Task LoadOlderRoomMessagesAsync()
@@ -1092,11 +1154,16 @@ public partial class TalkWindow : Window
     private void RebuildMemberDisplayItems()
     {
         _memberDisplayItems.Clear();
-        foreach (var userId in _roomMembers)
+        // 나를 맨 위에 "(나)"로, 나머지는 아이디 순서(test7, test9, test10)로.
+        var ordered = IdOrder.Sort(_roomMembers)
+            .OrderBy(id => string.Equals(id, _currentUserId, StringComparison.OrdinalIgnoreCase) ? 0 : 1);
+        foreach (var userId in ordered)
         {
+            var isMe = string.Equals(userId, _currentUserId, StringComparison.OrdinalIgnoreCase);
             _memberDisplayItems.Add(new MemberDisplayItem
             {
                 UserId = userId,
+                DisplayName = isMe ? $"{userId} (나)" : userId,
                 AvatarInitial = AvatarStyle.Initial(userId),
                 AvatarColorHex = HashColor(userId),
             });
@@ -1204,6 +1271,8 @@ public partial class TalkWindow : Window
             return;
         }
         var picker = new MessageRecipientPicker(_orgRoots, Array.Empty<string>(), excludeUserIds: _roomMembers) { Owner = this };
+        // 쪽지용 기본 문구("수신자 선택") 대신 초대 용도에 맞는 문구.
+        picker.SetPurpose("대화 상대 초대", "초대", "초대할 사람을 골라 주세요");
         if (picker.ShowDialog() != true) return;
         var targets = picker.SelectedUserIds
             .Where(id => !string.Equals(id, _currentUserId, StringComparison.OrdinalIgnoreCase))
@@ -1403,7 +1472,7 @@ public partial class TalkWindow : Window
     {
         var fileName = System.IO.Path.GetFileName(filePath);
         var fileInfo = new System.IO.FileInfo(filePath);
-        var head = $"📎 {fileName} ({FormatSize(fileInfo.Length)})";
+        var head = RoomFileText.Head(fileName, fileInfo.Length);
         var row = new TalkMessageRow(Guid.NewGuid().ToString("N"), _currentUserId, $"{head}\n업로드 중...")
         {
             ServerTs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
@@ -1438,13 +1507,13 @@ public partial class TalkWindow : Window
             }
             else
             {
-                row.Text = $"📎 {fileName} 전송 실패(서버에서 완료 처리 못함)";
+                row.Text = $"{head}\n전송 실패(서버에서 완료 처리 못함)";
                 row.Status = TalkMessageStatus.Failed;
             }
         }
         catch (Exception ex)
         {
-            row.Text = $"📎 {fileName} 전송 실패: {ex.Message}";
+            row.Text = $"{head}\n전송 실패: {ex.Message}";
             row.Status = TalkMessageStatus.Failed;
         }
     }
@@ -1472,7 +1541,7 @@ public partial class TalkWindow : Window
                 FromUserId = e.FromUserId,
                 ToUserId = _currentUserId,
                 // 안내 문구는 둘째 줄에 따로 — 한 줄에 붙이면 괄호 중간에서 줄이 바뀌었다.
-                Text = $"📎 {e.Filename} ({FormatSize(e.TotalSize)})\n더블클릭하여 다운로드",
+                Text = RoomFileText.WithDownloadHint(RoomFileText.Head(e.Filename, e.TotalSize)),
                 ServerTs = e.ServerTs,
             };
 
@@ -1484,19 +1553,24 @@ public partial class TalkWindow : Window
             };
 
             HandleIncomingRow(row);
-            _ = HandleFileOfferAsync(e, row);
+            // 다른 앱을 쓰는 중(이 창 비활성)에 모달 질문을 띄우면 포커스를 빼앗는다 → 돌아올 때 묻는다.
+            // 그 사이에는 말풍선의 "더블클릭하여 다운로드"로도 받을 수 있다.
+            if (IsActive) _ = HandleFileOfferAsync(e, row);
+            else _pendingFileOffers.Enqueue((e, row));
         });
     }
 
     private async Task HandleFileOfferAsync(FileAvailableNotification e, TalkMessageRow row)
     {
+        // 미뤄 둔 사이 사용자가 말풍선을 더블클릭해 이미 받았으면 다시 묻지 않는다.
+        if (!string.IsNullOrEmpty(row.SavedPath)) return;
         var choice = AppDialog.Confirm(
             this,
             $"{e.FromUserId} 님이 파일을 보냈습니다. 지금 받을까요?",
             "파일 수신",
             yes: "받기",
             no: "나중에",
-            detail: $"파일명: {e.Filename}\n크기: {FormatSize(e.TotalSize)}");
+            detail: $"파일명: {e.Filename}\n크기: {TalkListFormat.FileSize(e.TotalSize)}");
 
         if (!choice)
         {
@@ -1506,7 +1580,10 @@ public partial class TalkWindow : Window
         await DownloadFileToAsync(e, row, originalText: null);
     }
 
-    /// <summary>저장 위치를 묻고 내려받는다. originalText 가 있으면 취소·완료 후 행 문구를 그걸 기준으로 둔다.</summary>
+    /// <summary>
+    /// 저장 위치를 묻고 내려받는다. 진행률·완료·실패는 말풍선 둘째 줄에 보이고, 로컬 경로는 말풍선에 쓰지 않는다
+    /// (툴팁과 "더블클릭하면 폴더 열기"로만). 탐색기는 사용자가 저장된 행을 더블클릭할 때만 연다.
+    /// </summary>
     private async Task DownloadFileToAsync(FileAvailableNotification e, TalkMessageRow row, string? originalText)
     {
         var save = new SaveFileDialog
@@ -1521,27 +1598,26 @@ public partial class TalkWindow : Window
             return;
         }
 
-        //: 진행률을 메시지 row 텍스트에 실시간 반영. UI 스레드로 마샬링.
+        var knownSize = e.TotalSize;
         var progress = new Progress<MessengerClient.DownloadProgress>(p =>
         {
+            if (p.TotalBytes > 0) knownSize = p.TotalBytes;
             var pct = p.TotalBytes > 0 ? (int)Math.Round(p.Fraction * 100) : 0;
-            row.Text = $"📎 {e.Filename} 다운로드 중... {pct}% ({FormatSize(p.BytesReceived)}/{FormatSize(p.TotalBytes)})";
+            row.Text = RoomFileText.Downloading(e.Filename, knownSize, pct);
         });
 
         try
         {
-            row.Text = $"📎 {e.Filename} 다운로드 시작...";
+            row.Text = RoomFileText.Downloading(e.Filename, knownSize, 0);
             var file = await _client.DownloadFileAsync(e.UploadId, progress, CancellationToken.None);
             await System.IO.File.WriteAllBytesAsync(save.FileName, file.Bytes);
-            row.Text = $"📎 {e.Filename} ({FormatSize(file.Bytes.Length)}) 저장됨: {save.FileName}";
-            if (originalText is null) row.Status = TalkMessageStatus.Delivered;
-            System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{save.FileName}\"");
-            // — 이미지면 자동 미리보기 (사용자 명시 액션 → 자동 오픈은 적정)
+            row.SavedPath = save.FileName;
+            row.Text = RoomFileText.Saved(e.Filename, file.Bytes.Length);
             if (IsImageFilename(e.Filename))
             {
                 try
                 {
-                    var preview = new ImagePreviewWindow(save.FileName, e.Filename, e.TotalSize) { Owner = this };
+                    var preview = new ImagePreviewWindow(save.FileName, e.Filename, file.Bytes.Length) { Owner = this };
                     preview.Show();
                 }
                 catch { /* 미리보기 실패해도 저장은 성공 */ }
@@ -1549,32 +1625,14 @@ public partial class TalkWindow : Window
         }
         catch (Exception ex)
         {
-            row.Text = $"📎 {e.Filename} 다운로드 실패: {ex.Message}";
-            if (originalText is null) row.Status = TalkMessageStatus.Failed;
+            row.Text = RoomFileText.DownloadFailed(e.Filename, knownSize, ex.Message);
         }
     }
-
     private static bool IsImageFilename(string filename)
     {
         if (string.IsNullOrEmpty(filename)) return false;
         var ext = System.IO.Path.GetExtension(filename).ToLowerInvariant();
         return ext is ".jpg" or ".jpeg" or ".png" or ".gif" or ".webp" or ".bmp";
-    }
-
-    // 숫자와 단위 사이는 줄바꿈 없는 공백(U+00A0) — 긴 파일명 뒤에서 "(41 / B)"처럼 괄호 안이 끊기지 않게.
-    private static string FormatSize(long bytes)
-    {
-        if (bytes < 1024)
-        {
-            return $"{bytes} B";
-        }
-
-        if (bytes < 1024 * 1024)
-        {
-            return $"{bytes / 1024.0:F1} KB";
-        }
-
-        return $"{bytes / (1024.0 * 1024.0):F2} MB";
     }
 
     private void AttachmentCancelButton_OnClick(object sender, RoutedEventArgs e)
@@ -1612,11 +1670,33 @@ internal sealed class TalkMessageItem : INotifyPropertyChanged
     public TalkMessageItem(TalkMessageRow row)
     {
         Row = row ?? throw new ArgumentNullException(nameof(row));
+        // 문구·읽음·상태가 바뀌면 낭독 이름도 바뀐다.
+        Row.PropertyChanged += (_, _) => OnPropertyChanged(nameof(AccessibleName));
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public TalkMessageRow Row { get; }
+
+    /// <summary>화면 낭독기용 이름(클래스 이름 대신 보낸 사람·내용·시각·읽음).</summary>
+    public string AccessibleName => TalkMessageText.AccessibleName(
+        Row.Sender, Row.IsMine, Row.Text, Row.TimestampText, Row.ReadLabel, Row.Status);
+
+    public override string ToString() => AccessibleName;
+
+    private bool _showTime = true;
+
+    /// <summary>같은 사람이 같은 분에 이어 보낸 메시지면 마지막 것에만 시각을 보인다.</summary>
+    public bool ShowTime
+    {
+        get => _showTime;
+        set
+        {
+            if (_showTime == value) return;
+            _showTime = value;
+            OnPropertyChanged();
+        }
+    }
 
     private bool _isContinuation;
 
@@ -1672,6 +1752,9 @@ internal sealed class TalkMessageItem : INotifyPropertyChanged
 internal sealed class MemberDisplayItem
 {
     public string UserId { get; init; } = "";
+    /// <summary>목록 표시·낭독 이름(나는 "아이디 (나)").</summary>
+    public string DisplayName { get; init; } = "";
     public string AvatarInitial { get; init; } = "";
     public Color AvatarColorHex { get; init; }
+    public override string ToString() => DisplayName;
 }

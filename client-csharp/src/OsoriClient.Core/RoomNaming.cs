@@ -2,7 +2,7 @@ namespace OsoriClient.Core;
 
 /// <summary>
 /// 대화방 표시 이름 규칙. 대화 목록·대화창·검색 결과가 모두 이 함수를 써서 같은 방은 같은 이름으로 보인다.
-/// 자동 명명은 멤버 순서(서버 응답마다 다를 수 있음)에 흔들리지 않도록 아이디 오름차순으로 정렬한다.
+/// 자동 명명은 멤버 순서(서버 응답마다 다를 수 있음)에 흔들리지 않도록 아이디를 <see cref="IdOrder"/> 순서로 정렬한다.
 /// </summary>
 public static class RoomNaming
 {
@@ -35,10 +35,5 @@ public static class RoomNaming
         return AutoName(others);
     }
 
-    private static List<string> Normalize(IEnumerable<string> ids) => ids
-        .Where(id => !string.IsNullOrWhiteSpace(id))
-        .Distinct(StringComparer.OrdinalIgnoreCase)
-        .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
-        .ThenBy(id => id, StringComparer.Ordinal)
-        .ToList();
+    private static List<string> Normalize(IEnumerable<string> ids) => IdOrder.Sort(ids);
 }

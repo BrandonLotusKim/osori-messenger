@@ -71,7 +71,7 @@
                      Tag="이름 · 아이디 · 부서 검색"
                      ToolTip="이름/아이디/부서로 거르기"
                      TextChanged="FilterBox_OnTextChanged"
-        AutomationProperties.Name="이름 또는 아이디 검색" />
+        AutomationProperties.Name="이름 · 아이디 · 부서 검색" />
         </Border>
 
         <ListBox Grid.Row="2" x:Name="MemberList"

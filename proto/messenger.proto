@@ -654,6 +654,8 @@ message TalkRoomListItem {
   // 상대방 이름을 올바르게 본다.
   bool name_is_custom = 6;
   repeated string member_ids = 7;
+  // 내가 아직 안 읽은 메시지 수(남이 보낸 것 중 내 읽음 위치·입장 시각 이후). 로그인 직후 목록 배지 복원용.
+  int32 unread_count = 8;
 }
 
 message TalkRoomListResponse {
@@ -838,6 +840,8 @@ message MessageReceived {
   // 첨부 파일 이름·크기(바이트). 첨부가 없거나 업로드 정보를 못 찾으면 빈 값/0.
   string attachment_filename = 9;
   int64  attachment_size     = 10;
+  // 이 쪽지의 전체 수신자(아이디 순). 실시간으로 받은 쪽지에서도 받는 사람 표시·전체회신이 되게.
+  repeated string recipient_ids = 11;
 }
 
 message MessageListRequest {

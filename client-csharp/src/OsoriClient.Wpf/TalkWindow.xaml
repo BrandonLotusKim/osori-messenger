@@ -173,7 +173,9 @@
                         </TextBlock>
                         <TextBlock Text="{Binding Row.StatusIcon}"
                                    FontSize="{StaticResource FontTimestamp}"
-                                   HorizontalAlignment="Right">
+                                   HorizontalAlignment="Right"
+                                   ToolTip="{Binding Row.StatusToolTip}"
+                                   AutomationProperties.Name="{Binding Row.StatusToolTip}">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="Foreground" Value="{StaticResource StatusSendingBrush}" />
@@ -203,13 +205,23 @@
                         <TextBlock Text="{Binding Row.TimestampText}"
                                    Foreground="{StaticResource TextMutedBrush}"
                                    FontSize="{StaticResource FontTimestamp}"
-                                   HorizontalAlignment="Right" />
+                                   HorizontalAlignment="Right">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ShowTime}" Value="False">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </StackPanel>
 
                     <Border CornerRadius="{StaticResource CornerBubble}"
                             Padding="10,8"
                             MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BubbleMaxWidthConverter}, ConverterParameter=100}"
-                            ToolTip="{Binding Row.AbsoluteTimestampText}"
+                            ToolTip="{Binding Row.BubbleToolTip}"
                             ToolTipService.InitialShowDelay="600">
                         <Border.ContextMenu>
                             <!-- ContextMenu(Popup) 는 Window 의 흰색 TextElement.Foreground 상속을 안 받고
@@ -273,7 +285,7 @@
                         <!--: behaviors:LinkifiedText.Text 가 Text 대신 URL 자동 Hyperlink 처리 -->
                         <TextBlock behaviors:LinkifiedText.Text="{Binding Row.Text}"
                                    TextWrapping="Wrap"
-                                   FontSize="{StaticResource FontBody}">
+                                   FontSize="{DynamicResource ChatFontSize}">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Style.Triggers>
@@ -299,14 +311,24 @@
                         </StackPanel.Style>
                         <TextBlock Text="{Binding Row.TimestampText}"
                                    Foreground="{StaticResource TextMutedBrush}"
-                                   FontSize="{StaticResource FontTimestamp}" />
+                                   FontSize="{StaticResource FontTimestamp}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ShowTime}" Value="False">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </StackPanel>
                 </StackPanel>
             </Grid>
         </DataTemplate>
     </Window.Resources>
 
-    <Grid x:Name="RootGrid" Focusable="True" FocusVisualStyle="{x:Null}" PreviewMouseDown="RootGrid_OnPreviewMouseDown">
+    <Grid x:Name="RootGrid" Focusable="True" KeyboardNavigation.IsTabStop="False" FocusVisualStyle="{x:Null}" PreviewMouseDown="RootGrid_OnPreviewMouseDown">
         <Grid.RowDefinitions>
             <RowDefinition Height="32" />
             <RowDefinition Height="Auto" />
@@ -459,10 +481,11 @@
                             Width="28"
                             Height="28"
                             FontSize="16"
-                            ToolTip="메뉴"
+                            ToolTip="대화방 메뉴 (초대·이름 설정·나가기)"
                             Click="HeaderMenuButton_OnClick"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                            AutomationProperties.AutomationId="TalkHeaderMenuButton" />
+                            AutomationProperties.AutomationId="TalkHeaderMenuButton"
+                            AutomationProperties.Name="대화방 메뉴" />
                 </StackPanel>
             </Grid>
         </Border>
@@ -526,8 +549,13 @@
                      HorizontalContentAlignment="Stretch"
                      ItemTemplate="{StaticResource MessageBubbleTemplate}"
                      Loaded="TalkMessagesListBox_OnLoaded"
+                     Focusable="True"
+                     IsTabStop="True"
+                     KeyboardNavigation.TabNavigation="Once"
+                     PreviewMouseLeftButtonDown="TalkMessagesListBox_OnPreviewMouseLeftButtonDown"
                      MouseDoubleClick="TalkMessagesListBox_OnMouseDoubleClick"
-                     KeyDown="TalkMessagesListBox_OnKeyDown"
+                     PreviewKeyDown="TalkMessagesListBox_OnKeyDown"
+                     AutomationProperties.Name="메시지 목록"
                      AutomationProperties.AutomationId="TalkMessagesListBox">
                 <ListBox.ItemContainerStyle>
                     <Style TargetType="ListBoxItem">
@@ -536,6 +564,7 @@
                         <Setter Property="BorderThickness" Value="0" />
                         <Setter Property="Focusable" Value="False" />
                         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="AutomationProperties.Name" Value="{Binding AccessibleName}" />
                         <Setter Property="Opacity" Value="0" />
                         <Setter Property="RenderTransform">
                             <Setter.Value>
@@ -547,8 +576,16 @@
                         </Setter>
                         <Setter Property="Template">
                             <Setter.Value>
+                                <!-- 선택된 행(클릭 또는 위/아래 키)은 옅게 강조 — 파일 행을 고른 뒤 Enter 로 받을 수 있게 -->
                                 <ControlTemplate TargetType="ListBoxItem">
-                                    <ContentPresenter />
+                                    <Border x:Name="RowBg" Background="Transparent" CornerRadius="6">
+                                        <ContentPresenter />
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter TargetName="RowBg" Property="Background" Value="#14FFFFFF" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
                                 </ControlTemplate>
                             </Setter.Value>
                         </Setter>
@@ -643,7 +680,7 @@
                                     Padding="14,10"
                                     Click="PopupInviteButton_OnClick" />
                             <Button x:Name="DrawerLeaveButton"
-                                    Content="그룹 채팅 나가기"
+                                    Content="대화방 나가기"
                                     Style="{StaticResource FlatListButton}"
                                     Foreground="{StaticResource ErrorBrush}"
                                     HorizontalContentAlignment="Left"
@@ -662,6 +699,7 @@
                             <Style TargetType="ListBoxItem">
                                 <Setter Property="Padding" Value="0" />
                                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="AutomationProperties.Name" Value="{Binding DisplayName}" />
                             </Style>
                         </ListBox.ItemContainerStyle>
                         <ListBox.ItemTemplate>
@@ -686,7 +724,7 @@
                                                    VerticalAlignment="Center" />
                                     </Border>
                                     <TextBlock Grid.Column="1"
-                                               Text="{Binding UserId}"
+                                               Text="{Binding DisplayName}"
                                                VerticalAlignment="Center"
                                                FontSize="{StaticResource FontBody}" />
                                 </Grid>
@@ -740,7 +778,7 @@
                          Padding="4,10"
                          Margin="0,0,0,4"
                          FontFamily="{StaticResource AppFontFamily}"
-                         FontSize="{StaticResource FontBody}"
+                         FontSize="{DynamicResource ChatFontSize}"
                          Background="Transparent"
                          Foreground="{StaticResource TextPrimaryBrush}"
                          CaretBrush="{StaticResource TextPrimaryBrush}"

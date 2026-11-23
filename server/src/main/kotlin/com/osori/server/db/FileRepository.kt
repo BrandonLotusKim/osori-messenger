@@ -113,6 +113,12 @@ class FileRepository(private val db: Database) {
         }
     }
 
+    /**
+     * 쪽지 첨부로 쓸 수 있는지: 본인이 올린 업로드이거나, 그 업로드가 붙은 쪽지의 보낸 사람·수신자(전달).
+     */
+    fun canAttachToMessage(uploadId: UUID, userId: String): Boolean =
+        getUpload(uploadId)?.fromUserId == userId || isMessageAttachmentParticipant(uploadId, userId)
+
     fun recordChunkBytes(uploadId: UUID, deltaBytes: Long) {
         db.withConnection { conn ->
             conn.prepareStatement(

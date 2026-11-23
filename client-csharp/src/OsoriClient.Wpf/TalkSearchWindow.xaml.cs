@@ -113,7 +113,7 @@ public partial class TalkSearchWindow : Window
 
             if (_results.Count == 0)
             {
-                EmptyTitleText.Text = $"'{keyword}' 와 일치하는 대화가 없습니다";
+                EmptyTitleText.Text = $"'{keyword}' 검색 결과가 없습니다";
                 EmptyPanel.Visibility = Visibility.Visible;
                 StatusTextBlock.Text = "결과 0건";
                 return;

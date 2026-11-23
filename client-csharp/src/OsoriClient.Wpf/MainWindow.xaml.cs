@@ -58,6 +58,7 @@ public partial class MainWindow : Window
         // 초기 글꼴 크기 적용 (저장된 값, 범위 가드)
         var initialFs = _settings.Current.FontSize;
         if (initialFs >= 8 && initialFs <= 48) FontSize = initialFs;
+        App.ApplyFontSetting(initialFs);
         //: 로그인 시 디폴트 탭은 항상 조직도 (XAML 의 TabOrg IsChecked=True).
         // LastSelectedTab 복원은 의도적으로 호출하지 않음 — 사용자 명시 요구사항.
         TabOrg.IsChecked = true;
@@ -172,6 +173,8 @@ public partial class MainWindow : Window
                     row.LastMessagePreview = item.LastMessageText ?? string.Empty;
                     row.LastMessageTs = item.LastMessageTs;
                 }
+                // 재로그인·재시작 뒤에도 안 읽은 수 배지를 서버 읽음 위치 기준으로 복원한다.
+                row.UnreadCount = Math.Max(0, item.UnreadCount);
             }
         }
         catch (Exception ex)
@@ -550,6 +553,39 @@ public partial class MainWindow : Window
         StatusBarSyncText.Text = text;
     }
 
+    /// <summary>
+    /// 설정 접기 머리글(Expander 기본 템플릿의 HeaderSite 토글 버튼)은 머리글이 글자 묶음이라 낭독 이름이 비어 있었다 —
+    /// Expander 에 붙인 이름("알림 설정" 등)을 토글 버튼에도 준다.
+    /// </summary>
+    private void SettingsExpander_OnLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Expander ex) return;
+        ex.ApplyTemplate();
+        if (ex.Template?.FindName("HeaderSite", ex) is System.Windows.Controls.Primitives.ToggleButton header)
+        {
+            System.Windows.Automation.AutomationProperties.SetName(header, System.Windows.Automation.AutomationProperties.GetName(ex));
+        }
+    }
+
+    private System.Windows.Threading.DispatcherTimer? _transientStatusTimer;
+
+    /// <summary>
+    /// 잠깐만 보여 줄 상태 문구(쪽지 보냄·설정 저장 등). 5초 뒤 같은 문구가 그대로면 지운다 —
+    /// 예전엔 "쪽지를 보냈습니다"가 다른 화면에서도 계속 남아 있었다.
+    /// </summary>
+    private void ShowTransientStatus(string text)
+    {
+        StatusBarSyncText.Text = text;
+        _transientStatusTimer?.Stop();
+        _transientStatusTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _transientStatusTimer.Tick += (_, _) =>
+        {
+            _transientStatusTimer?.Stop();
+            if (StatusBarSyncText.Text == text) StatusBarSyncText.Text = "";
+        };
+        _transientStatusTimer.Start();
+    }
+
     // 2026-09-17 사용자 요구사항 — 옛날 1:1 대화를 전부 대화방(Room) 시스템으로 이전하면서,
     // 이 두 진입점(검색해서 열기 / ID 직접 입력해서 새 대화)도 더 이상 구식 Mode.DirectMessage 로
     // 열지 않고 다른 진입점(조직도 더블클릭/우클릭/플러그인 버튼)과 동일하게 방 생성-또는-열기로
@@ -839,7 +875,7 @@ public partial class MainWindow : Window
             .Count(id => !string.Equals(id, _currentUserId, StringComparison.OrdinalIgnoreCase));
         PluginSendTalkLabel.Text = count > 0 ? $"대화 {count}명" : "대화하기";
         PluginSendTalkButton.ToolTip = count > 0
-            ? $"선택한 {count}명과 대화하기 (Ctrl+클릭으로 더 고르기)"
+            ? $"선택한 {count}명과 대화하기 (Ctrl+클릭 또는 Space 로 더 고르기)"
             : "대화하기 — 조직도에서 고른 사람과 대화방을 엽니다";
         System.Windows.Automation.AutomationProperties.SetName(PluginSendTalkButton, count > 0 ? $"선택한 {count}명과 대화하기" : "대화하기");
         PluginSendMessageButton.ToolTip = count > 0
@@ -858,12 +894,20 @@ public partial class MainWindow : Window
     }
 
     // Enter 키: 선택된 멤버와 1:1 대화 시작 (TreeView 의 위/아래 화살표는 WPF default).
+    // Space 키: Ctrl+클릭과 같은 다중 선택 토글 — 마우스 없이도 여러 명을 골라 레일 "대화 N명"으로 방을 만든다.
     private void OrgTreeView_OnKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Enter) return;
+        if (e.Key is not (Key.Enter or Key.Space)) return;
         if (OrgTreeView.SelectedItem is not OrgTreeNode node) return;
         if (node.Kind != OrgTreeNodeKind.Member) return;
         if (string.IsNullOrEmpty(node.UserId)) return;
+        if (e.Key == Key.Space)
+        {
+            node.IsSelectedForRoom = !node.IsSelectedForRoom;
+            UpdateOrgSelectionHint();
+            e.Handled = true;
+            return;
+        }
         if (string.Equals(node.UserId, _currentUserId, StringComparison.OrdinalIgnoreCase)) return;
         _ = OpenOrCreateRoomAsync(new List<string> { node.UserId });
         e.Handled = true;
@@ -984,7 +1028,7 @@ public partial class MainWindow : Window
         if (dlg.ShowDialog() == true)
         {
             if (_messageBox == "sent") _ = ReloadMessageBoxAsync();
-            StatusBarSyncText.Text = "쪽지를 보냈습니다";
+            ShowTransientStatus("쪽지를 보냈습니다");
         }
     }
 
@@ -1041,7 +1085,9 @@ public partial class MainWindow : Window
         {
             // 1:1(상대 1명)·나와의 대화는 같은 구성원 방을 새로 만들 이유가 거의 없으므로 묻지 않고 기존 방을 연다.
             // 그룹(상대 2명 이상)만 "이동 / 새로 만들기" 를 묻는다.
-            var choice = targets.Count <= 1 ? DuplicateRoomChoice.Move : ShowDuplicateRoomDialog();
+            // 어떤 방인지 이름으로 알려 준다(목록에 있으면 그 표시 이름).
+            var existingName = _conversations.FirstOrDefault(r => string.Equals(r.CounterpartId, ack.ExistingRoomId, StringComparison.OrdinalIgnoreCase))?.DisplayName;
+            var choice = targets.Count <= 1 ? DuplicateRoomChoice.Move : ShowDuplicateRoomDialog(existingName);
             if (choice == DuplicateRoomChoice.Cancel) return;
             if (choice == DuplicateRoomChoice.Move)
             {
@@ -1097,12 +1143,15 @@ public partial class MainWindow : Window
     private enum DuplicateRoomChoice { Move, CreateNew, Cancel }
 
     /// <summary>"이미 같은 구성원의 방이 있습니다 — 이동할까요, 새로 만들까요?" 확인창.</summary>
-    private DuplicateRoomChoice ShowDuplicateRoomDialog()
+    private DuplicateRoomChoice ShowDuplicateRoomDialog(string? existingName)
     {
         // 공통 보조 창(AppDialog): 다크 타이틀바, 내용 높이에 맞춰 늘어나 버튼이 잘리지 않는다.
+        var head = string.IsNullOrWhiteSpace(existingName)
+            ? "이미 같은 구성원으로 만들어진 대화방이 있습니다."
+            : $"같은 구성원의 대화방 '{existingName}'이(가) 이미 있습니다.";
         var idx = AppDialog.Choose(
             this,
-            "이미 같은 구성원으로 만들어진 대화방이 있습니다.\n어떻게 할까요?",
+            $"{head}\n어떻게 할까요?",
             "대화방 만들기",
             new[] { "대화방으로 이동", "새 대화방 만들기", "취소" },
             defaultIndex: 0,
@@ -1267,6 +1316,8 @@ public partial class MainWindow : Window
 
         // 글꼴 크기 — 즉시 반영 (Window.FontSize inherit). 명시 FontSize 가진 토큰들은 영향 안 받음.
         FontSize = fontSize;
+        App.ApplyFontSetting(fontSize);
+        ShowTransientStatus("설정을 저장했습니다");
     }
 
     private void SettingsResetButton_OnClick(object sender, RoutedEventArgs e)
@@ -1555,7 +1606,7 @@ public partial class MainWindow : Window
         {
             // 보낸쪽지함을 보고 있었다면 즉시 반영
             if (_messageBox == "sent") _ = ReloadMessageBoxAsync();
-            StatusBarSyncText.Text = "쪽지를 보냈습니다";
+            ShowTransientStatus("쪽지를 보냈습니다");
         }
     }
 
@@ -1573,7 +1624,15 @@ public partial class MainWindow : Window
     {
         if (MessageListBox.SelectedItem is not MessageRowVm row) return;
         var dlg = new MessageDetailWindow(_client, row, _messageBox == "sent", _currentUserId) { Owner = this };
-        var result = dlg.ShowDialog();
+        // 상세 창이 열리며 읽음 처리되는 즉시 쪽지 탭 배지를 줄인다(닫을 때까지 기다리지 않음).
+        void OnRowRead(object? s, System.ComponentModel.PropertyChangedEventArgs a)
+        {
+            if (a.PropertyName == nameof(MessageRowVm.IsRead) && _messageBox != "sent") RecomputeMessageUnread();
+        }
+        row.PropertyChanged += OnRowRead;
+        bool? result;
+        try { result = dlg.ShowDialog(); }
+        finally { row.PropertyChanged -= OnRowRead; }
         if (result == true && dlg.WasDeleted)
         {
             _messageRows.Remove(row);
@@ -1609,6 +1668,11 @@ public partial class MainWindow : Window
                 break;
             case MessageDetailAction.Forward:
                 composeDlg.SetPrefill(Array.Empty<string>(), dlg.ForwardTitle(), dlg.QuotedBody());
+                // 전달은 첨부도 함께(답장·전체회신은 첨부 없이).
+                if (dlg.Row.HasAttachment && !string.IsNullOrEmpty(dlg.Row.AttachmentUploadId))
+                {
+                    composeDlg.SetForwardedAttachment(dlg.Row.AttachmentUploadId, dlg.Row.AttachmentFilename, dlg.Row.AttachmentSize);
+                }
                 break;
             default:
                 return;
@@ -1616,7 +1680,7 @@ public partial class MainWindow : Window
         if (composeDlg.ShowDialog() == true)
         {
             if (_messageBox == "sent") _ = ReloadMessageBoxAsync();
-            StatusBarSyncText.Text = "쪽지를 보냈습니다";
+            ShowTransientStatus("쪽지를 보냈습니다");
         }
     }
 
@@ -1664,6 +1728,8 @@ public partial class MainWindow : Window
             MessageTabBadge.Visibility = Visibility.Visible;
             MessageTabBadgeText.Text = _messageUnread > 99 ? "99+" : _messageUnread.ToString();
         }
+        // 대화 탭과 같이 배지 숫자를 낭독 이름에도 싣는다(배지 색 점만으로 전하지 않게).
+        System.Windows.Automation.AutomationProperties.SetName(TabMessage, _messageUnread > 0 ? $"쪽지, 안 읽음 {_messageUnread}개" : "쪽지");
     }
 
     private void RecomputeMessageUnread()
@@ -1807,7 +1873,7 @@ public sealed class MessageRowVm : System.ComponentModel.INotifyPropertyChanged
     public static MessageRowVm FromEntry(MessageEntry e, bool sentBox, string myUserId)
     {
         var counterpart = sentBox
-            ? (e.RecipientIds.Count == 1 ? e.RecipientIds[0] : $"{e.RecipientIds.FirstOrDefault() ?? ""} 외 {Math.Max(0, e.RecipientIds.Count - 1)}명")
+            ? OsoriClient.Core.IdOrder.Summary(e.RecipientIds)
             : e.FromUserId;
         return new MessageRowVm
         {
@@ -1823,7 +1889,7 @@ public sealed class MessageRowVm : System.ComponentModel.INotifyPropertyChanged
             AttachmentFilename = e.AttachmentFilename,
             AttachmentSize = e.AttachmentSize,
             FromUserId = e.FromUserId,
-            RecipientIds = e.RecipientIds.ToList(),
+            RecipientIds = OsoriClient.Core.IdOrder.Sort(e.RecipientIds),
             _isRead = sentBox || e.ReadAt > 0,
         };
     }
@@ -1838,7 +1904,8 @@ public sealed class MessageRowVm : System.ComponentModel.INotifyPropertyChanged
         SentAtText = FormatSentAt(e.SentAt),
         IsSentBox = false,
         FromUserId = e.FromUserId,
-        RecipientIds = new List<string> { myUserId },
+        // 서버가 전체 수신자를 실어 주면 그대로(받는 사람 표시·전체회신), 옛 서버면 나 한 명.
+        RecipientIds = e.RecipientIds.Count > 0 ? OsoriClient.Core.IdOrder.Sort(e.RecipientIds) : new List<string> { myUserId },
         HasAttachment = !string.IsNullOrEmpty(e.AttachmentUploadId),
         AttachmentUploadId = e.AttachmentUploadId,
         AttachmentFilename = e.AttachmentFilename,
