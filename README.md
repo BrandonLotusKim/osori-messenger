@@ -1,6 +1,9 @@
 # 오소리 메신저 (Osori Messenger)
 
+[![CI](https://github.com/BrandonLotusKim/osori-messenger/actions/workflows/ci.yml/badge.svg)](https://github.com/BrandonLotusKim/osori-messenger/actions/workflows/ci.yml)
+
 30명 규모 사무실에서 쓰는 Windows 사내 메신저입니다(개인 프로젝트).
+소개 페이지: https://brndnkm-osori.pages.dev
 서버는 Kotlin(Ktor), 클라이언트는 C#(.NET 8, WPF), 통신은 WebSocket 위의 Protobuf, 저장소는 PostgreSQL입니다.
 
 ![메인 화면](docs/images/main.png)
@@ -84,6 +87,10 @@ cd ..\client-csharp; dotnet test src\OsoriClient.Core.Tests
 | `docker/` | 개발·운영용 Compose, TLS 가이드 |
 | `installer/` | 클라이언트 설치 프로그램 |
 | `PROTOCOL.md` | 메시지 종류와 흐름 설명 |
+
+## 개발 이력
+
+2026년 4월부터 비공개 저장소에서 개발했고, 공개하면서 이력을 정리해 새로 올렸습니다. 이 저장소의 커밋 날짜는 공개한 시점(2026년 11월)부터입니다.
 
 ## 라이선스
 
